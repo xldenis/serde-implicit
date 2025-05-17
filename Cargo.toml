@@ -1,0 +1,7 @@
+[workspace]
+members = [
+	"serde-implicit",
+	"serde-implicit-proc"
+]
+resolver = "2"
+
