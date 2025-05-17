@@ -12,6 +12,5 @@ pub fn derive_serialize(input: TS1) -> TS1 {
         .unwrap_or_else(syn::Error::into_compile_error)
         .into();
 
-    println!("{ts}");
     ts
 }

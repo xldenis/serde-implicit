@@ -96,7 +96,7 @@ pub fn expand_derive_serialize(
 
                 let (__tag, __content) = serde::Deserializer::deserialize_any(
                     __deserializer,
-                    serde_implicit::TaggedContentVisitor::<__Variant>::new("expecting_string"))?;
+                    serde_implicit::__private::TaggedContentVisitor::<__Variant>::new("expecting_string"))?;
                 let __deserializer = serde::__private::de::ContentDeserializer::<__D::Error>::new(__content);
 
                 match __tag {
@@ -496,5 +496,3 @@ fn implement_variant_deserializer(var: &syn::Variant, enum_name: &syn::Ident) ->
 
     }
 }
-
-mod hacks {}

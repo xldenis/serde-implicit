@@ -2,41 +2,47 @@ use serde_json::json;
 
 #[test]
 fn test_basic() {
-    #[derive(serde_implicit_proc::Deserialize, Debug)]
-    enum Omg {
-        Var1 {
+    #[derive(serde_implicit::Deserialize, Debug)]
+    // #[serde(untagged)]
+    enum Message {
+        // { "content": "i love serializing", "sender": "xldenis", "timestamp": 123 }
+        Text {
             #[tag]
-            unique_key: bool,
-            other_key: u32,
+            content: String,
+            sender: String,
+            timestamp: u64,
         },
-        Var2 {
+        // { "image_url": "https://blah.com/omg.gif" }
+        Image {
             #[tag]
-            blob: u32,
-            other_key: u32,
+            image_url: String,
+            caption: Option<String>,
+        },
+        // { "emoji": "floating_man", "message_id": 123 }
+        Reaction {
+            #[tag]
+            emoji: String,
+            message_id: u64,
         },
     }
 
-    #[derive(serde::Deserialize, Debug)]
-    #[serde(untagged)]
-    enum Omg2 {
-        Var1 { unique_key: bool, other_key: u32 },
-        Var2 { blob: u32, other_key: u32 },
-    }
-
-    let res: Result<Omg, _> = serde_json::from_value(json!({"unique_key": true, "other_key": 09 }));
-    assert!(res.is_ok());
-
-    let res: Result<Omg, _> = serde_json::from_value(json!({"blob": 123, "other_key": 09 }));
+    let res: Result<Message, _> = serde_json::from_value(
+        json!({ "content": "oops i mislabeled my field", "username": "xldenis", "timestamp": 1234 }),
+    );
     println!("{res:?}");
     assert!(res.is_ok());
 
-    let res: Result<Omg, _> =
-        serde_json::from_value(json!({"unique_key": true, "missing_key": true }));
-    println!("{res:?}");
+    // let res: Result<Omg, _> = serde_json::from_value(json!({"blob": 123, "other_key": 09 }));
+    // println!("{res:?}");
+    // assert!(res.is_ok());
 
-    let res: Result<Omg2, _> =
-        serde_json::from_value(json!({"unique_key": true, "missing_key": true }));
-    println!("{res:?}");
+    // let res: Result<Omg, _> =
+    //     serde_json::from_value(json!({"unique_key": true, "missing_key": true }));
+    // println!("{res:?}");
+
+    // let res: Result<Omg2, _> =
+    //     serde_json::from_value(json!({"unique_key": true, "missing_key": true }));
+    // println!("{res:?}");
 
     // assert!(res.is_ok());
 }
