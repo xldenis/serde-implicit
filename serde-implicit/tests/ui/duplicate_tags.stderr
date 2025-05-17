@@ -1,0 +1,11 @@
+error: duplicate `#[tag]` annotations found, only one field can be tagged
+ --> tests/ui/duplicate_tags.rs:3:5
+  |
+3 | /     DoubleTagged {
+4 | |         #[tag]
+5 | |         primary_tag: String,
+6 | |         #[tag]
+7 | |         secondary_tag: bool,
+8 | |         value: u32,
+9 | |     },
+  | |_____^

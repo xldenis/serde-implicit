@@ -1,4 +1,4 @@
-error: `serde_implicit` can only `Deserialize` struct enum variants
+error: missing `#[tag]`
  --> tests/ui/missing_tags.rs:3:5
   |
 3 | /     MissingTag {

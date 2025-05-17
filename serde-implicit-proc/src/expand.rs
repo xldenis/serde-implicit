@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
 
@@ -13,18 +15,26 @@ pub fn expand_derive_serialize(
             for v in &data_enum.variants {
                 match &v.fields {
                     syn::Fields::Named(named) => {
-                        let tag_field = named
+                        // Find all fields with #[tag] attribute
+                        let tagged_fields: Vec<_> = named
                             .named
                             .iter()
-                            .find(|x| x.attrs.iter().find(|a| a.path().is_ident(TAG)).is_some());
+                            .filter(|x| x.attrs.iter().any(|a| a.path().is_ident(TAG)))
+                            .collect();
 
-                        if let Some(tag_field) = tag_field {
-                            tags.push(tag_field);
-                        } else {
-                            return Err(Error::new_spanned(
-                                v,
-                                "`serde_implicit` can only `Deserialize` struct enum variants",
-                            ));
+                        match tagged_fields.len() {
+                            0 => {
+                                return Err(Error::new_spanned(v, "missing `#[tag]`"));
+                            }
+                            1 => {
+                                tags.push(tagged_fields[0]);
+                            }
+                            _ => {
+                                return Err(Error::new_spanned(
+                                    v,
+                                    "duplicate `#[tag]` annotations found, only one field can be tagged",
+                                ));
+                            }
                         }
                     }
                     syn::Fields::Unit | syn::Fields::Unnamed(_) => {
@@ -45,13 +55,21 @@ pub fn expand_derive_serialize(
         }
     };
 
+    let mut unique_tags = HashSet::new();
+
+    for t in &tags {
+        if !unique_tags.insert(t.ident.clone()) {
+            return Err(Error::new_spanned(t, "duplicate tags found"));
+        }
+    }
+
     // let deser: serde::__private::de::TaggedContentVisitor<()> = todo!();
     // todo validate that tags are all unique
 
     // step 3 initial code gen: build fragments for variants
 
     let mut variant_arms = vec![];
-    for (ix, (tag, var)) in tags.iter().zip(&data_enum.variants).enumerate() {
+    for (ix, (_, var)) in tags.iter().zip(&data_enum.variants).enumerate() {
         let block = deserialize_variant(var);
 
         let variant = implement_variant_deserializer(var, &input.ident);
@@ -62,7 +80,7 @@ pub fn expand_derive_serialize(
     }
 
     // if we need the 'de lifetime do same trick as serde
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let this_type = &input.ident;
 

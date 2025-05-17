@@ -1,0 +1,6 @@
+error: duplicate tags found
+  --> tests/ui/repeated_tag.rs:9:9
+   |
+9  | /         #[tag]
+10 | |         primary_tag: String,
+   | |___________________________^
