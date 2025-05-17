@@ -79,7 +79,7 @@ where
             };
         }
         match tag {
-            None => Err(de::Error::missing_field("blaoo".into())),
+            None => Err(de::Error::missing_field("tag was not found".into())),
             Some(tag) => Ok((tag, Content::Map(vec))),
         }
     }

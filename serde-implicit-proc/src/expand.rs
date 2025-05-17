@@ -1,7 +1,7 @@
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
 
-use syn::{DeriveInput, Error, Member, punctuated::Punctuated, token::Comma};
+use syn::{Error, punctuated::Punctuated, token::Comma};
 pub const TAG: &'static str = "tag";
 
 pub fn expand_derive_serialize(
@@ -17,7 +17,15 @@ pub fn expand_derive_serialize(
                             .named
                             .iter()
                             .find(|x| x.attrs.iter().find(|a| a.path().is_ident(TAG)).is_some());
-                        tags.push(tag_field);
+
+                        if let Some(tag_field) = tag_field {
+                            tags.push(tag_field);
+                        } else {
+                            return Err(Error::new_spanned(
+                                v,
+                                "`serde_implicit` can only `Deserialize` struct enum variants",
+                            ));
+                        }
                     }
                     syn::Fields::Unit | syn::Fields::Unnamed(_) => {
                         return Err(Error::new_spanned(
@@ -46,7 +54,7 @@ pub fn expand_derive_serialize(
     for (ix, (tag, var)) in tags.iter().zip(&data_enum.variants).enumerate() {
         let block = deserialize_variant(var);
 
-        let variant = implement_variant_deserializer(var, &format_ident!("Omg"), 0);
+        let variant = implement_variant_deserializer(var, &input.ident);
         let cons = format_ident!("__variant{ix}");
         variant_arms.push(quote! {
             __Variant::#cons => {#block #variant }
@@ -58,30 +66,6 @@ pub fn expand_derive_serialize(
 
     let this_type = &input.ident;
 
-    // // step 4 final code generation
-    // let visitor = quote! {
-
-    //     #[doc(hidden)]
-    //     struct __Visitor <'de, #impl_generics> #where_clause {
-    //         marker: std::marker::PhantomData<#this_type #ty_generics>,
-    //         lifetime: std::marker::PhantomData<&'de ()>,
-    //     }
-
-    //     impl<'de, #impl_generics> serde::de::Visitor<'de, #ty_generics> for __Visitor<'de, #ty_generics> #where_clause
-    //     {
-    //         type Value = #this_type #ty_generics;
-
-    //         fn visit_map<__A>(self, mut __map: __A) -> serde::Result<Self::Value, __A::Error>
-    //         where
-    //             __A: serde::de::MapAccess<'de>
-    //         {
-    //             let (tag, content) = TaggedContentVisitor::visit_map(__map)?;
-
-    //         }
-    //     }
-
-    // };
-
     let enum_variant = generate_variant_enum(&data_enum.variants, &tags);
 
     Ok(quote! {
@@ -92,18 +76,14 @@ pub fn expand_derive_serialize(
             {
                 #enum_variant
 
-
                 let (__tag, __content) = serde::Deserializer::deserialize_any(
                     __deserializer,
-                    // put correct path here
-                    serde_implicit::TaggedContentVisitor::<__Variant>::new("omg"))?;
+                    serde_implicit::TaggedContentVisitor::<__Variant>::new("expecting_string"))?;
                 let __deserializer = serde::__private::de::ContentDeserializer::<__D::Error>::new(__content);
 
                 match __tag {
                     #(#variant_arms)*
                 }
-
-                // deserialize variants
             }
 
         }
@@ -122,12 +102,11 @@ pub fn expand_derive_serialize(
 /// A TokenStream containing the generated `__Variant` enum and its implementations
 pub fn generate_variant_enum(
     variants: &Punctuated<syn::Variant, Comma>,
-    tags: &[Option<&syn::Field>],
+    tags: &[&syn::Field],
 ) -> TokenStream {
-    use proc_macro2::{Literal, TokenStream};
+    use proc_macro2::TokenStream;
     use quote::{format_ident, quote};
     use std::str::FromStr;
-    use syn::LitStr;
 
     // Generate variant enum variants
     let variant_enum_variants = variants.iter().enumerate().map(|(i, _)| {
@@ -145,66 +124,41 @@ pub fn generate_variant_enum(
         .iter()
         .enumerate()
         .zip(tags)
-        .filter_map(|((i, _), tag_field)| {
-            // Only generate match arms for variants that have tag fields
-            tag_field.map(|field| {
-                // Find the tag value from field attributes
-                let tag_value = field
-                    .attrs
-                    .iter()
-                    .find(|a| a.path().is_ident(TAG))
-                    .and_then(|attr| {
-                        // Extract the tag value from the attribute
-                        attr.parse_args::<LitStr>().ok().map(|lit| lit.value())
-                    })
-                    .unwrap_or_else(|| {
-                        // Fallback to the field name if no explicit tag value
-                        field
-                            .ident
-                            .as_ref()
-                            .map(|id| id.to_string())
-                            .unwrap_or_default()
-                    });
+        .map(|((i, _), tag_field)| {
+            let tag_value = tag_field
+                .ident
+                .as_ref()
+                .map(|id| id.to_string())
+                .unwrap_or_default();
 
-                let variant = format_ident!("__variant{}", i);
-                quote! {
-                    #tag_value => serde::__private::Ok(__Variant::#variant),
-                }
-            })
+            let variant = format_ident!("__variant{}", i);
+            quote! {
+                #tag_value => serde::__private::Ok(__Variant::#variant),
+            }
         });
 
     // Generate match arms for visit_bytes using the same tag values
-    let visit_bytes_arms =
-        variants
-            .iter()
-            .enumerate()
-            .zip(tags)
-            .filter_map(|((i, _), tag_field)| {
-                tag_field.map(|field| {
-                    let tag_value = field
-                        .attrs
-                        .iter()
-                        .find(|a| a.path().is_ident(TAG))
-                        .and_then(|attr| attr.parse_args::<LitStr>().ok().map(|lit| lit.value()))
-                        .unwrap_or_else(|| {
-                            field
-                                .ident
-                                .as_ref()
-                                .map(|id| id.to_string())
-                                .unwrap_or_default()
-                        });
+    let visit_bytes_arms = variants
+        .iter()
+        .enumerate()
+        .zip(tags)
+        .map(|((i, _), tag_field)| {
+            let tag_value = tag_field
+                .ident
+                .as_ref()
+                .map(|id| id.to_string())
+                .unwrap_or_default();
 
-                    let byte_string = format!("b\"{}\"", tag_value);
-                    let byte_tokens = TokenStream::from_str(&byte_string).unwrap_or_else(|_| {
-                        quote! { #tag_value.as_bytes() }
-                    });
-
-                    let variant = format_ident!("__variant{}", i);
-                    quote! {
-                        #byte_tokens => serde::__private::Ok(__Variant::#variant),
-                    }
-                })
+            let byte_string = format!("b\"{}\"", tag_value);
+            let byte_tokens = TokenStream::from_str(&byte_string).unwrap_or_else(|_| {
+                quote! { #tag_value.as_bytes() }
             });
+
+            let variant = format_ident!("__variant{}", i);
+            quote! {
+                #byte_tokens => serde::__private::Ok(__Variant::#variant),
+            }
+        });
 
     // Generate the combined token stream
     quote! {
@@ -394,17 +348,11 @@ fn deserialize_variant(var: &syn::Variant) -> TokenStream {
 ///
 /// * `var` - The variant to generate deserialization code for
 /// * `enum_name` - The name of the enum type
-/// * `variant_index` - The index of this variant in the enum
 ///
 /// # Returns
 ///
 /// A TokenStream containing the generated visitor and deserialization code for the variant
-fn implement_variant_deserializer(
-    var: &syn::Variant,
-    enum_name: &syn::Ident,
-    variant_index: usize,
-) -> TokenStream {
-    use proc_macro2::TokenStream;
+fn implement_variant_deserializer(var: &syn::Variant, enum_name: &syn::Ident) -> TokenStream {
     use quote::{format_ident, quote};
 
     let variant_ident = &var.ident;
@@ -491,7 +439,6 @@ fn implement_variant_deserializer(
                 )
             }
 
-
             #[inline]
             fn visit_map<__A>(
                 self,
@@ -521,7 +468,6 @@ fn implement_variant_deserializer(
             }
         }
 
-        // How we'll use this visitor with the variant enum
         serde::Deserializer::deserialize_map(
             __deserializer,
             __Visitor {

@@ -1,0 +1,9 @@
+error: `serde_implicit` can only `Deserialize` struct enum variants
+ --> tests/ui/missing_tags.rs:3:5
+  |
+3 | /     MissingTag {
+4 | |         field1: String,
+5 | |         field2: bool,
+6 | |         value: u32,
+7 | |     },
+  | |_____^
