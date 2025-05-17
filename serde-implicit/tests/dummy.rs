@@ -2,34 +2,29 @@ use serde_json::json;
 
 #[test]
 fn test_basic() {
-    #[derive(serde_implicit::Deserialize, Debug)]
+    #[derive(serde_implicit_proc::Deserialize)]
     // #[serde(untagged)]
-    enum Message {
-        // { "content": "i love serializing", "sender": "xldenis", "timestamp": 123 }
-        Text {
+    enum MultiTypeTag {
+        StringVariant {
             #[tag]
-            content: String,
-            sender: String,
-            timestamp: u64,
+            string_tag: String,
+            value: u32,
         },
-        // { "image_url": "https://blah.com/omg.gif" }
-        Image {
+        NumberVariant {
             #[tag]
-            image_url: String,
-            caption: Option<String>,
+            number_tag: u64,
+            value: String,
         },
-        // { "emoji": "floating_man", "message_id": 123 }
-        Reaction {
+        BoolVariant {
             #[tag]
-            emoji: String,
-            message_id: u64,
+            bool_tag: bool,
+            value: Vec<String>,
         },
     }
 
-    let res: Result<Message, _> = serde_json::from_value(
-        json!({ "content": "oops i mislabeled my field", "username": "xldenis", "timestamp": 1234 }),
-    );
-    println!("{res:?}");
+    let res: Result<MultiTypeTag, _> =
+        serde_json::from_value(json!({ "string_tag": "", "value": 0 }));
+    // println!("{res:?}");
     assert!(res.is_ok());
 
     // let res: Result<Omg, _> = serde_json::from_value(json!({"blob": 123, "other_key": 09 }));

@@ -1,7 +1,8 @@
 error: missing `#[tag]`
- --> tests/ui/missing_tags.rs:3:5
+ --> tests/ui/missing_tags.rs:3:16
   |
-3 | /     MissingTag {
+3 |       MissingTag {
+  |  ________________^
 4 | |         field1: String,
 5 | |         field2: bool,
 6 | |         value: u32,

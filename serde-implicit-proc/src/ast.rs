@@ -8,7 +8,7 @@ pub struct Variant {
     pub fields: FieldsNamed,
 }
 
-struct Enum {
+pub struct Enum {
     pub ident: Ident,
     pub generics: Generics,
 
@@ -34,13 +34,13 @@ pub fn parse_data(input: DeriveInput) -> syn::Result<Enum> {
         variants.push(variant);
     }
 
-    // let mut unique_tags = HashSet::new();
+    let mut unique_tags = HashSet::new();
 
-    // for t in &tags {
-    //     if !unique_tags.insert(t.ident.clone()) {
-    //         return Err(Error::new_spanned(t, "duplicate tags found"));
-    //     }
-    // }
+    for v in &variants {
+        if !unique_tags.insert(v.tag.clone()) {
+            return Err(Error::new_spanned(v.tag.clone(), "duplicate tags found"));
+        }
+    }
 
     Ok(Enum {
         ident: input.ident,
@@ -50,7 +50,7 @@ pub fn parse_data(input: DeriveInput) -> syn::Result<Enum> {
 }
 
 fn parse_variant(v: syn::Variant) -> syn::Result<Variant> {
-    let mut tag;
+    let tag;
     let named = match v.fields {
         syn::Fields::Named(named) => named,
         syn::Fields::Unit | syn::Fields::Unnamed(_) => {
@@ -84,7 +84,7 @@ fn parse_variant(v: syn::Variant) -> syn::Result<Variant> {
     };
 
     Ok(Variant {
-        name: v.ident,
+        ident: v.ident,
         tag,
         fields: named,
     })

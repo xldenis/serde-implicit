@@ -62,7 +62,7 @@ pub fn generate_variant_enum(variants: &[ast::Variant]) -> TokenStream {
     };
 
     let visit_str_arms = variants.iter().enumerate().map(|(i, var)| {
-        let tag_value = &var.tag;
+        let tag_value = Literal::string(&var.tag.to_string());
 
         let variant = format_ident!("__variant{}", i);
         quote! {
