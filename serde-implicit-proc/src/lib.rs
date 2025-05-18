@@ -3,6 +3,7 @@ use syn::{DeriveInput, parse_macro_input};
 
 mod ast;
 mod expand;
+mod tuple_enum;
 
 // todo: shadow serde completely?
 #[proc_macro_derive(Deserialize, attributes(serde_implicit))]

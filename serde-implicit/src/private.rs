@@ -1,10 +1,9 @@
 use std::fmt;
 
-use crate::content::Content;
 use serde::de::{self, IntoDeserializer, MapAccess, Unexpected};
 use serde::{Deserialize, de::Visitor};
 
-pub use crate::content::ContentDeserializer;
+pub use crate::content::{Content, ContentDeserializer, ContentRefDeserializer};
 
 pub struct TaggedContentVisitor<T> {
     expecting: &'static str,
@@ -120,6 +119,30 @@ where
             (None, None) => Err(de::Error::missing_field("tag was not found".into())),
             (None, Some(default)) => Ok((default, Content::Map(vec))),
             (Some(tag), _) => Ok((tag, Content::Map(vec))),
+        }
+    }
+}
+
+pub fn extract_at_index<'de, E: serde::de::Error>(
+    c: Content<'de>,
+    index: usize,
+) -> ::std::result::Result<(Content<'de>, Option<Content<'de>>), E> {
+    match c {
+        Content::Seq(mut s) => {
+            if s.len() == 0 {
+                Err(E::missing_field("missing tag: sequence is empty"))
+            } else if index >= s.len() {
+                Err(E::missing_field("tag index out of bounds"))
+            } else {
+                Ok((s.remove(index), Some(Content::Seq(s))))
+            }
+        }
+        c => {
+            if index == 0 {
+                Ok((c, None))
+            } else {
+                Err(E::missing_field("tag index out of bounds for non-sequence"))
+            }
         }
     }
 }

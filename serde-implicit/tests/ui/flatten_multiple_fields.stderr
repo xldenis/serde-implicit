@@ -1,0 +1,5 @@
+error: flatten variant must have exactly one field
+ --> tests/ui/flatten_multiple_fields.rs:7:5
+  |
+7 |     MultiField(u64, #[serde_implicit(flatten)] Helper),
+  |     ^^^^^^^^^^

@@ -3,7 +3,10 @@ use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
 use syn::{Ident, WhereClause};
 
-use crate::ast::{self, Fallthrough};
+use crate::{
+    ast::{self, Fallthrough, Style},
+    tuple_enum::expand_tuple_enum,
+};
 
 pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let data_enum = ast::parse_data(input)?;
@@ -13,27 +16,72 @@ pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macr
 
     let this_type = &data_enum.ident;
 
-    let enum_variant = generate_variant_enum(&data_enum.variants, data_enum.fallthrough.as_ref());
-
-    let fallthrough = if data_enum.fallthrough.is_some() {
-        quote! { Some(__Variant::Fallthrough) }
-    } else {
-        quote! { None }
-    };
+    let enum_variant = enum_variant(&data_enum);
 
     let impl_generics = ImplGenerics(&data_enum.generics);
     let ty_generics = TypeGenerics(&data_enum.generics);
 
-    let this_type_str = Literal::string(&this_type.to_string());
+    let body = match data_enum.vars {
+        Style::Struct {
+            variants,
+            fallthrough,
+        } => expand_struct_enum(
+            &data_enum.ident,
+            (impl_generics, ty_generics, where_clause),
+            &variants,
+            fallthrough.as_ref(),
+        )?,
+        Style::Tuple(variants) => expand_tuple_enum(&data_enum.ident, &variants)?,
+    };
+
+    Ok(quote! {
+        #[automatically_derived]
+        impl <'de, #impl_generics > serde::Deserialize<'de> for #this_type < #ty_generics > #where_clause {
+            fn deserialize<__D>(__deserializer: __D) -> Result<Self, __D::Error>
+            where __D: serde::Deserializer<'de>
+            {
+               #enum_variant
+
+               #body
+            }
+
+        }
+    })
+}
+
+pub fn enum_variant(enum_: &ast::Enum) -> proc_macro2::TokenStream {
+    match &enum_.vars {
+        Style::Tuple(_) => {
+            // Tuple enums don't generate a separate variant enum type
+            // (though they perhaps could).
+            // Instead the code is structured as a series of 'trials'
+            // like `serde(untagged)` which commits as soon as a matching variant is found.
+            quote! {}
+        }
+        Style::Struct {
+            variants,
+            fallthrough,
+        } => generate_variant_enum(&variants, fallthrough.as_ref()),
+    }
+}
+
+pub fn expand_struct_enum(
+    ty_name: &Ident,
+    generics: (ImplGenerics, TypeGenerics, Option<&WhereClause>),
+    variants: &[ast::Variant],
+    fallthrough: Option<&Fallthrough>,
+) -> syn::Result<proc_macro2::TokenStream> {
+    let (impl_generics, ty_generics, where_clause) = generics;
+    let this_type_str = Literal::string(&ty_name.to_string());
 
     let mut variant_arms = vec![];
-    for (ix, var) in data_enum.variants.iter().enumerate() {
+    for (ix, var) in variants.iter().enumerate() {
         let block = deserialize_fields(&var.fields);
 
         let variant = implement_variant_deserializer(
             &var.ident,
             &var.fields,
-            &data_enum.ident,
+            &ty_name,
             &impl_generics,
             &ty_generics,
             &where_clause,
@@ -44,32 +92,28 @@ pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macr
         });
     }
 
-    if let Some(fall) = &data_enum.fallthrough {
-        let variant = implement_fallthrough_deserializer(&fall, &data_enum.ident);
+    if let Some(fall) = &fallthrough {
+        let variant = implement_fallthrough_deserializer(&fall, &ty_name);
 
         variant_arms.push(quote! {
             __Variant::Fallthrough => { #variant }
         });
     }
 
+    let fallthrough = if fallthrough.is_some() {
+        quote! { Some(__Variant::Fallthrough) }
+    } else {
+        quote! { None }
+    };
+
     Ok(quote! {
-        #[automatically_derived]
-        impl <'de, #impl_generics > serde::Deserialize<'de> for #this_type < #ty_generics > #where_clause {
-            fn deserialize<__D>(__deserializer: __D) -> Result<Self, __D::Error>
-            where __D: serde::Deserializer<'de>
-            {
-                #enum_variant
+         let (__tag, __content) = serde::Deserializer::deserialize_any(
+            __deserializer,
+            serde_implicit::__private::TaggedContentVisitor::<__Variant>::new(#this_type_str, #fallthrough))?;
+        let __deserializer = serde_implicit::__private::ContentDeserializer::<__D::Error>::new(__content);
 
-                let (__tag, __content) = serde::Deserializer::deserialize_any(
-                    __deserializer,
-                    serde_implicit::__private::TaggedContentVisitor::<__Variant>::new(#this_type_str, #fallthrough))?;
-                let __deserializer = serde_implicit::__private::ContentDeserializer::<__D::Error>::new(__content);
-
-                match __tag {
-                    #(#variant_arms)*
-                }
-            }
-
+        match __tag {
+            #(#variant_arms)*
         }
     })
 }
@@ -430,6 +474,7 @@ mod annoying {
     use quote::{ToTokens, quote};
     use syn::{GenericParam, Generics, Token};
 
+    #[derive(Clone, Copy)]
     pub struct ImplGenerics<'a>(pub(crate) &'a Generics);
 
     pub(crate) struct TokensOrDefault<'a, T: 'a>(pub &'a Option<T>);
@@ -500,6 +545,7 @@ mod annoying {
         }
     }
 
+    #[derive(Clone, Copy)]
     pub struct TypeGenerics<'a>(pub(crate) &'a Generics);
 
     impl<'a> ToTokens for TypeGenerics<'a> {
