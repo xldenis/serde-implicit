@@ -2,7 +2,7 @@ use serde_json::json;
 
 #[test]
 fn test_basic() {
-    #[derive(serde_implicit_proc::Deserialize)]
+    #[derive(serde_implicit_proc::Deserialize, Debug)]
     // #[serde(untagged)]
     enum MultiTypeTag {
         StringVariant {
@@ -14,6 +14,7 @@ fn test_basic() {
             #[tag]
             number_tag: u64,
             value: String,
+            unique_field: String,
         },
         BoolVariant {
             #[tag]
@@ -24,22 +25,41 @@ fn test_basic() {
 
     let res: Result<MultiTypeTag, _> =
         serde_json::from_value(json!({ "string_tag": "", "value": 0 }));
-    // println!("{res:?}");
     assert!(res.is_ok());
 
-    // let res: Result<Omg, _> = serde_json::from_value(json!({"blob": 123, "other_key": 09 }));
-    // println!("{res:?}");
-    // assert!(res.is_ok());
+    let res: Result<MultiTypeTag, _> =
+        serde_json::from_value(json!({ "string_tag": "", "value": 0, "extra_field": "1234" }));
+    assert!(res.is_ok());
 
-    // let res: Result<Omg, _> =
-    //     serde_json::from_value(json!({"unique_key": true, "missing_key": true }));
-    // println!("{res:?}");
+    let res: Result<MultiTypeTag, _> =
+        serde_json::from_value(json!({ "string_tag": "", "value": "straing" }));
 
-    // let res: Result<Omg2, _> =
-    //     serde_json::from_value(json!({"unique_key": true, "missing_key": true }));
-    // println!("{res:?}");
+    let err = res.unwrap_err();
+    assert!(
+        matches!(
+            &*err.to_string(),
+            r#"invalid type: string "straing", expected u32"#
+        ),
+        "{err}",
+    );
 
-    // assert!(res.is_ok());
+    let res: Result<MultiTypeTag, _> = serde_json::from_value(json!({ "string_tag": "" }));
+
+    let err = res.unwrap_err();
+    assert!(
+        matches!(&*err.to_string(), r#"missing field `value`"#),
+        "{err}",
+    );
+
+    // output specific error message about `unique_field` (if constructor is `deny_unknown_fields`)
+    // let res: Result<MultiTypeTag, _> =
+    //     serde_json::from_value(json!({ "string_tag": "", "unique_field": "" }));
+
+    // let err = res.unwrap_err();
+    // assert!(
+    //     matches!(&*err.to_string(), r#"missing field `value`"#),
+    //     "{err}",
+    // );
 }
 
 #[test]

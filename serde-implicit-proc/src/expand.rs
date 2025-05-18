@@ -24,6 +24,7 @@ pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macr
 
     let enum_variant = generate_variant_enum(&data_enum.variants);
 
+    let this_type_str = Literal::string(&this_type.to_string());
     Ok(quote! {
         #[automatically_derived]
         impl<'de> serde::Deserialize<'de> for #this_type #ty_generics #where_clause {
@@ -34,7 +35,7 @@ pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macr
 
                 let (__tag, __content) = serde::Deserializer::deserialize_any(
                     __deserializer,
-                    serde_implicit::__private::TaggedContentVisitor::<__Variant>::new("expecting_string"))?;
+                    serde_implicit::__private::TaggedContentVisitor::<__Variant>::new(#this_type_str))?;
                 let __deserializer = serde::__private::de::ContentDeserializer::<__D::Error>::new(__content);
 
                 match __tag {

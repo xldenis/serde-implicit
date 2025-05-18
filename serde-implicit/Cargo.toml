@@ -6,9 +6,9 @@ edition = "2024"
 [dependencies]
 serde-implicit-proc = { path = "../serde-implicit-proc" }
 serde = { version = "1.0.219", features = ["derive"] }
-proptest = "1.6.0"
-proptest-derive = "0.5.1"
 
 [dev-dependencies]
 serde_json = "*"
 trybuild = "1.0.105"
+proptest = "1.6.0"
+proptest-derive = "0.5.1"
