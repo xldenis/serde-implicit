@@ -2,6 +2,10 @@
 name = "serde-implicit"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+authors = ["Xavier Denis <git@xav.io>"]
+homepage = "https://github.com/xldenis/serde-implicit"
+description = "the serde(untagged) you wish you had"
 
 [dependencies]
 serde-implicit-proc = { version = "0.1", path = "../serde-implicit-proc" }
