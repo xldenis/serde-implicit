@@ -1,19 +1,28 @@
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
+use syn::Ident;
 
-use crate::ast;
+use crate::ast::{self, Fallthrough};
 
 pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let data_enum = ast::parse_data(input)?;
 
     let mut variant_arms = vec![];
     for (ix, var) in data_enum.variants.iter().enumerate() {
-        let block = deserialize_variant(var);
+        let block = deserialize_fields(&var.fields);
 
-        let variant = implement_variant_deserializer(var, &data_enum.ident);
+        let variant = implement_variant_deserializer(&var.ident, &var.fields, &data_enum.ident);
         let cons = format_ident!("__variant{ix}");
         variant_arms.push(quote! {
             __Variant::#cons => {#block #variant }
+        });
+    }
+
+    if let Some(fall) = &data_enum.fallthrough {
+        let variant = implement_fallthrough_deserializer(&fall, &data_enum.ident);
+
+        variant_arms.push(quote! {
+            __Variant::Fallthrough => { #variant }
         });
     }
 
@@ -22,9 +31,16 @@ pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macr
 
     let this_type = &data_enum.ident;
 
-    let enum_variant = generate_variant_enum(&data_enum.variants);
+    let enum_variant = generate_variant_enum(&data_enum.variants, data_enum.fallthrough.as_ref());
 
     let this_type_str = Literal::string(&this_type.to_string());
+
+    let fallthrough = if data_enum.fallthrough.is_some() {
+        quote! { Some(__Variant::Fallthrough) }
+    } else {
+        quote! { None }
+    };
+
     Ok(quote! {
         #[automatically_derived]
         impl<'de> serde::Deserialize<'de> for #this_type #ty_generics #where_clause {
@@ -35,7 +51,7 @@ pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macr
 
                 let (__tag, __content) = serde::Deserializer::deserialize_any(
                     __deserializer,
-                    serde_implicit::__private::TaggedContentVisitor::<__Variant>::new(#this_type_str))?;
+                    serde_implicit::__private::TaggedContentVisitor::<__Variant>::new(#this_type_str, #fallthrough))?;
                 let __deserializer = serde::__private::de::ContentDeserializer::<__D::Error>::new(__content);
 
                 match __tag {
@@ -47,7 +63,10 @@ pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macr
     })
 }
 
-pub fn generate_variant_enum(variants: &[ast::Variant]) -> TokenStream {
+pub fn generate_variant_enum(
+    variants: &[ast::Variant],
+    fallthrough: Option<&Fallthrough>,
+) -> TokenStream {
     use proc_macro2::TokenStream;
     use quote::{format_ident, quote};
     use std::str::FromStr;
@@ -85,11 +104,16 @@ pub fn generate_variant_enum(variants: &[ast::Variant]) -> TokenStream {
         }
     });
 
+    let fallthrough_variant = fallthrough.map(|_| {
+        quote! { Fallthrough }
+    });
+
     quote! {
         #[allow(non_camel_case_types)]
         #[doc(hidden)]
         enum __Variant {
             #variant_enum_variants
+            #fallthrough_variant
         }
 
         #[doc(hidden)]
@@ -156,8 +180,8 @@ pub fn generate_variant_enum(variants: &[ast::Variant]) -> TokenStream {
     }
 }
 
-fn deserialize_variant(var: &ast::Variant) -> TokenStream {
-    let field_variants = (0..var.fields.named.len()).map(|i| {
+fn deserialize_fields(fields: &ast::Fields) -> TokenStream {
+    let field_variants = (0..fields.named.len()).map(|i| {
         let variant = format_ident!("__field{}", i);
         quote! { #variant }
     });
@@ -171,7 +195,7 @@ fn deserialize_variant(var: &ast::Variant) -> TokenStream {
     let mut visit_str_arms = Vec::new();
     let mut visit_bytes_arms = Vec::new();
 
-    for (i, field) in var.fields.named.iter().enumerate() {
+    for (i, field) in fields.named.iter().enumerate() {
         let field_ident = field.ident.as_ref().unwrap();
         let field_name = field_ident.to_string();
         let variant = format_ident!("__field{}", i);
@@ -257,11 +281,25 @@ fn deserialize_variant(var: &ast::Variant) -> TokenStream {
     }
 }
 
-fn implement_variant_deserializer(var: &ast::Variant, enum_name: &syn::Ident) -> TokenStream {
+fn implement_fallthrough_deserializer(
+    fallthrough: &Fallthrough,
+    enum_name: &syn::Ident,
+) -> TokenStream {
+    let variant_name = &fallthrough.ident;
+    let field_name = &fallthrough.field.ident;
+
+    quote! {
+        serde::Deserialize::deserialize(__deserializer).map(|res| { #enum_name :: #variant_name { #field_name: res } })
+    }
+}
+
+fn implement_variant_deserializer(
+    variant_ident: &Ident,
+    fields: &ast::Fields,
+    enum_name: &syn::Ident,
+) -> TokenStream {
     use quote::{format_ident, quote};
 
-    let fields = &var.fields.named;
-    let variant_ident = &var.ident;
     let variant_name = format!("{}::{}", enum_name, variant_ident);
     let expecting_message = format!("struct variant {}", variant_name);
 
@@ -269,7 +307,7 @@ fn implement_variant_deserializer(var: &ast::Variant, enum_name: &syn::Ident) ->
     let mut field_processing = Vec::new();
     let mut final_fields = Vec::new();
 
-    for (i, field) in var.fields.named.iter().enumerate() {
+    for (i, field) in fields.named.iter().enumerate() {
         let field_ident = field.ident.as_ref().unwrap();
         let field_name = field_ident.to_string();
         let field_type = &field.ty;
@@ -303,8 +341,8 @@ fn implement_variant_deserializer(var: &ast::Variant, enum_name: &syn::Ident) ->
         });
     }
 
-    let field_idents = fields.iter().map(|f| f.ident.as_ref().unwrap());
-    let field_vars = (0..fields.len()).map(|i| format_ident!("__field{}", i));
+    let field_idents = fields.named.iter().map(|f| f.ident.as_ref().unwrap());
+    let field_vars = (0..fields.named.len()).map(|i| format_ident!("__field{}", i));
 
     let struct_init = quote! {
         #enum_name::#variant_ident {

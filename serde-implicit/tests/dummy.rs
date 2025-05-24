@@ -63,6 +63,20 @@ fn test_basic() {
 }
 
 #[test]
+fn fallthrough_basic() {
+    #[derive(serde_implicit_proc::Deserialize)]
+    enum EnumWithFallThrough {
+        Multiple {
+            #[serde_implicit(tag)]
+            variants: Vec<u32>,
+        },
+        Single {
+            one: u32,
+        },
+    }
+}
+
+#[test]
 fn ui() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");

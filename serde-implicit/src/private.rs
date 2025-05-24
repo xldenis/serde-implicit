@@ -1,5 +1,4 @@
 use std::fmt;
-use std::marker::PhantomData;
 
 use serde::__private::de::{Content, ContentDeserializer};
 use serde::de::{self, IntoDeserializer, MapAccess};
@@ -7,15 +6,15 @@ use serde::{Deserialize, de::Visitor};
 
 pub struct TaggedContentVisitor<T> {
     expecting: &'static str,
-    value: PhantomData<T>,
+    fallthrough: Option<T>,
 }
 
 impl<T> TaggedContentVisitor<T> {
     /// Visitor for the content of an internally tagged enum with the given tag name.
-    pub fn new(expecting: &'static str) -> Self {
+    pub fn new(expecting: &'static str, fallthrough: Option<T>) -> Self {
         TaggedContentVisitor {
             expecting,
-            value: PhantomData,
+            fallthrough,
         }
     }
 }
@@ -79,9 +78,10 @@ where
                 }
             };
         }
-        match tag {
-            None => Err(de::Error::missing_field("tag was not found".into())),
-            Some(tag) => Ok((tag, Content::Map(vec))),
+        match (tag, self.fallthrough) {
+            (None, None) => Err(de::Error::missing_field("tag was not found".into())),
+            (None, Some(default)) => Ok((default, Content::Map(vec))),
+            (Some(tag), _) => Ok((tag, Content::Map(vec))),
         }
     }
 }
