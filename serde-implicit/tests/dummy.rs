@@ -71,9 +71,20 @@ fn fallthrough_basic() {
             variants: Vec<u32>,
         },
         Single {
-            one: u32,
+            one: Other,
         },
     }
+
+    #[derive(serde::Deserialize)]
+    struct Other {
+        field: u32,
+    }
+
+    let res: Result<EnumWithFallThrough, _> = serde_json::from_value(json!({"field": 32}));
+    res.unwrap();
+
+    let res: Result<EnumWithFallThrough, _> = serde_json::from_value(json!({"variants": [32]}));
+    res.unwrap();
 }
 
 #[test]
