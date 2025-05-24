@@ -65,25 +65,26 @@ fn test_basic() {
 #[test]
 fn fallthrough_basic() {
     #[derive(serde_implicit_proc::Deserialize)]
-    enum EnumWithFallThrough {
+    enum EnumWithFallThrough<T> {
         Multiple {
             #[serde_implicit(tag)]
             variants: Vec<u32>,
         },
         Single {
-            one: Other,
+            one: T,
         },
     }
 
-    #[derive(serde::Deserialize)]
-    struct Other {
-        field: u32,
-    }
+    // #[derive(serde::Deserialize)]
+    // struct Other {
+    //     field: u32,
+    // }
 
-    let res: Result<EnumWithFallThrough, _> = serde_json::from_value(json!({"field": 32}));
+    let res: Result<EnumWithFallThrough<u32>, _> = serde_json::from_value(json!({"field": 32}));
     res.unwrap();
 
-    let res: Result<EnumWithFallThrough, _> = serde_json::from_value(json!({"variants": [32]}));
+    let res: Result<EnumWithFallThrough<u32>, _> =
+        serde_json::from_value(json!({"variants": [32]}));
     res.unwrap();
 }
 

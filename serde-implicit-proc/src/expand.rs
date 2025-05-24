@@ -1,17 +1,43 @@
+use annoying::{ImplGenerics, TypeGenerics};
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
-use syn::Ident;
+use syn::{Ident, WhereClause};
 
 use crate::ast::{self, Fallthrough};
 
 pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let data_enum = ast::parse_data(input)?;
 
+    // if we need the 'de lifetime do same trick as serde
+    let (_, _, where_clause) = data_enum.generics.split_for_impl();
+
+    let this_type = &data_enum.ident;
+
+    let enum_variant = generate_variant_enum(&data_enum.variants, data_enum.fallthrough.as_ref());
+
+    let fallthrough = if data_enum.fallthrough.is_some() {
+        quote! { Some(__Variant::Fallthrough) }
+    } else {
+        quote! { None }
+    };
+
+    let impl_generics = ImplGenerics(&data_enum.generics);
+    let ty_generics = TypeGenerics(&data_enum.generics);
+
+    let this_type_str = Literal::string(&this_type.to_string());
+
     let mut variant_arms = vec![];
     for (ix, var) in data_enum.variants.iter().enumerate() {
         let block = deserialize_fields(&var.fields);
 
-        let variant = implement_variant_deserializer(&var.ident, &var.fields, &data_enum.ident);
+        let variant = implement_variant_deserializer(
+            &var.ident,
+            &var.fields,
+            &data_enum.ident,
+            &impl_generics,
+            &ty_generics,
+            &where_clause,
+        );
         let cons = format_ident!("__variant{ix}");
         variant_arms.push(quote! {
             __Variant::#cons => {#block #variant }
@@ -26,24 +52,9 @@ pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macr
         });
     }
 
-    // if we need the 'de lifetime do same trick as serde
-    let (_, ty_generics, where_clause) = data_enum.generics.split_for_impl();
-
-    let this_type = &data_enum.ident;
-
-    let enum_variant = generate_variant_enum(&data_enum.variants, data_enum.fallthrough.as_ref());
-
-    let this_type_str = Literal::string(&this_type.to_string());
-
-    let fallthrough = if data_enum.fallthrough.is_some() {
-        quote! { Some(__Variant::Fallthrough) }
-    } else {
-        quote! { None }
-    };
-
     Ok(quote! {
         #[automatically_derived]
-        impl<'de> serde::Deserialize<'de> for #this_type #ty_generics #where_clause {
+        impl <'de, #impl_generics > serde::Deserialize<'de> for #this_type < #ty_generics > #where_clause {
             fn deserialize<__D>(__deserializer: __D) -> Result<Self, __D::Error>
             where __D: serde::Deserializer<'de>
             {
@@ -297,6 +308,9 @@ fn implement_variant_deserializer(
     variant_ident: &Ident,
     fields: &ast::Fields,
     enum_name: &syn::Ident,
+    impl_generics: &ImplGenerics,
+    ty_generics: &TypeGenerics,
+    where_clause: &Option<&WhereClause>,
 ) -> TokenStream {
     use quote::{format_ident, quote};
 
@@ -352,14 +366,14 @@ fn implement_variant_deserializer(
 
     quote! {
         #[doc(hidden)]
-        struct __Visitor<'de> {
-            marker: serde::__private::PhantomData<#enum_name>,
+        struct __Visitor<'de, #ty_generics> {
+            marker: serde::__private::PhantomData<#enum_name < #ty_generics >>,
             lifetime: serde::__private::PhantomData<&'de ()>,
         }
 
         #[automatically_derived]
-        impl<'de> serde::de::Visitor<'de> for __Visitor<'de> {
-            type Value = #enum_name;
+        impl<'de, #impl_generics> serde::de::Visitor<'de> for __Visitor<'de, #ty_generics> #where_clause {
+            type Value =  #enum_name < #ty_generics >;
 
             fn expecting(
                 &self,
@@ -403,10 +417,132 @@ fn implement_variant_deserializer(
         serde::Deserializer::deserialize_map(
             __deserializer,
             __Visitor {
-                marker: serde::__private::PhantomData::<#enum_name>,
+                marker: serde::__private::PhantomData::<#enum_name < #ty_generics > >,
                 lifetime: serde::__private::PhantomData,
             }
         )
 
+    }
+}
+
+mod annoying {
+    use proc_macro2::TokenStream;
+    use quote::{ToTokens, quote};
+    use syn::{GenericParam, Generics, Token};
+
+    pub struct ImplGenerics<'a>(pub(crate) &'a Generics);
+
+    pub(crate) struct TokensOrDefault<'a, T: 'a>(pub &'a Option<T>);
+
+    impl<'a, T> ToTokens for TokensOrDefault<'a, T>
+    where
+        T: ToTokens + Default,
+    {
+        fn to_tokens(&self, tokens: &mut TokenStream) {
+            match self.0 {
+                Some(t) => t.to_tokens(tokens),
+                None => T::default().to_tokens(tokens),
+            }
+        }
+    }
+
+    impl<'a> ToTokens for ImplGenerics<'a> {
+        fn to_tokens(&self, tokens: &mut TokenStream) {
+            if self.0.params.is_empty() {
+                return;
+            }
+
+            // TokensOrDefault(&self.0.lt_token).to_tokens(tokens);
+
+            // Print lifetimes before types and consts, regardless of their
+            // order in self.params.
+            let mut trailing_or_empty = true;
+            for param in self.0.params.pairs() {
+                if let GenericParam::Lifetime(_) = **param.value() {
+                    param.to_tokens(tokens);
+                    trailing_or_empty = param.punct().is_some();
+                }
+            }
+            for param in self.0.params.pairs() {
+                if let GenericParam::Lifetime(_) = **param.value() {
+                    continue;
+                }
+                if !trailing_or_empty {
+                    <Token![,]>::default().to_tokens(tokens);
+                    trailing_or_empty = true;
+                }
+                match param.value() {
+                    GenericParam::Lifetime(_) => unreachable!(),
+                    GenericParam::Type(param) => {
+                        // Leave off the type parameter defaults
+                        param.ident.to_tokens(tokens);
+                        // super hack
+                        if !param.bounds.is_empty() {
+                            TokensOrDefault(&param.colon_token).to_tokens(tokens);
+                            param.bounds.to_tokens(tokens);
+                            tokens.extend(quote! { + serde::Deserialize<'de> });
+                        } else {
+                            tokens.extend(quote! { :serde::Deserialize<'de> });
+                        }
+                    }
+                    GenericParam::Const(param) => {
+                        // Leave off the const parameter defaults
+                        param.const_token.to_tokens(tokens);
+                        param.ident.to_tokens(tokens);
+                        param.colon_token.to_tokens(tokens);
+                        param.ty.to_tokens(tokens);
+                    }
+                }
+                param.punct().to_tokens(tokens);
+            }
+
+            // TokensOrDefault(&self.0.gt_token).to_tokens(tokens);
+        }
+    }
+
+    pub struct TypeGenerics<'a>(pub(crate) &'a Generics);
+
+    impl<'a> ToTokens for TypeGenerics<'a> {
+        fn to_tokens(&self, tokens: &mut TokenStream) {
+            if self.0.params.is_empty() {
+                return;
+            }
+
+            // TokensOrDefault(&self.0.lt_token).to_tokens(tokens);
+
+            // Print lifetimes before types and consts, regardless of their
+            // order in self.params.
+            let mut trailing_or_empty = true;
+            for param in self.0.params.pairs() {
+                if let GenericParam::Lifetime(def) = *param.value() {
+                    // Leave off the lifetime bounds and attributes
+                    def.lifetime.to_tokens(tokens);
+                    param.punct().to_tokens(tokens);
+                    trailing_or_empty = param.punct().is_some();
+                }
+            }
+            for param in self.0.params.pairs() {
+                if let GenericParam::Lifetime(_) = **param.value() {
+                    continue;
+                }
+                if !trailing_or_empty {
+                    <Token![,]>::default().to_tokens(tokens);
+                    trailing_or_empty = true;
+                }
+                match param.value() {
+                    GenericParam::Lifetime(_) => unreachable!(),
+                    GenericParam::Type(param) => {
+                        param.ident.to_tokens(tokens);
+                    }
+                    GenericParam::Const(param) => {
+                        // Leave off the const parameter defaults
+                        param.ident.to_tokens(tokens);
+                    }
+                }
+                param.punct().to_tokens(tokens);
+            }
+
+            // TokensOrDefault(&self.0.gt_token).to_tokens(tokens);
+        }
     }
 }
