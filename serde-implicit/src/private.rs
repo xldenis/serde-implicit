@@ -1,7 +1,7 @@
 use std::fmt;
 
 use serde::__private::de::{Content, ContentDeserializer};
-use serde::de::{self, IntoDeserializer, MapAccess};
+use serde::de::{self, IntoDeserializer, MapAccess, Unexpected};
 use serde::{Deserialize, de::Visitor};
 
 pub struct TaggedContentVisitor<T> {
@@ -43,6 +43,42 @@ where
     //     let rest = de::value::SeqAccessDeserializer::new(seq);
     //     Ok((tag, Content::deserialize(rest)?))
     // }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        match self.fallthrough {
+            Some(default) => Ok((default, Content::String(v.into()))),
+            None => Err(de::Error::invalid_type(Unexpected::Str(v), &self.expecting)),
+        }
+    }
+
+    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        match self.fallthrough {
+            Some(default) => Ok((default, Content::U64(v))),
+            None => Err(de::Error::invalid_type(
+                Unexpected::Unsigned(v),
+                &self.expecting,
+            )),
+        }
+    }
+
+    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        match self.fallthrough {
+            Some(default) => Ok((default, Content::I64(v))),
+            None => Err(de::Error::invalid_type(
+                Unexpected::Signed(v),
+                &self.expecting,
+            )),
+        }
+    }
 
     fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
     where

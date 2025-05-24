@@ -64,7 +64,7 @@ fn test_basic() {
 
 #[test]
 fn fallthrough_basic() {
-    #[derive(serde_implicit_proc::Deserialize)]
+    #[derive(serde_implicit_proc::Deserialize, Debug)]
     enum EnumWithFallThrough<T> {
         Multiple {
             #[serde_implicit(tag)]
@@ -80,8 +80,20 @@ fn fallthrough_basic() {
     //     field: u32,
     // }
 
-    let res: Result<EnumWithFallThrough<u32>, _> = serde_json::from_value(json!({"field": 32}));
+    let res: Result<EnumWithFallThrough<u32>, _> = serde_json::from_value(json!(42));
     res.unwrap();
+
+    let res: Result<EnumWithFallThrough<u32>, _> = serde_json::from_value(json!(42.5));
+    let err = res.unwrap_err();
+
+    assert!(
+        matches!(
+            &*err.to_string(),
+            // todo provide more specific diagnostics
+            r#"invalid type: floating point `42.5`, expected EnumWithFallThrough"#
+        ),
+        "{err}",
+    );
 
     let res: Result<EnumWithFallThrough<u32>, _> =
         serde_json::from_value(json!({"variants": [32]}));
