@@ -6,17 +6,17 @@ use proptest_derive::Arbitrary;
 #[serde(untagged)]
 enum MultiTypeTag {
     StringVariant {
-        #[tag]
+        #[serde_implicit(tag)]
         string_tag: String,
         value: u32,
     },
     NumberVariant {
-        #[tag]
+        #[serde_implicit(tag)]
         number_tag: u64,
         value: String,
     },
     BoolVariant {
-        #[tag]
+        #[serde_implicit(tag)]
         bool_tag: bool,
         value: Vec<String>,
     },
@@ -26,13 +26,13 @@ enum MultiTypeTag {
 #[serde(untagged)]
 enum OverlappingFields {
     Variant1 {
-        #[tag]
+        #[serde_implicit(tag)]
         type_tag: String,
         common_field: u32,
         variant1_specific: bool,
     },
     Variant2 {
-        #[tag]
+        #[serde_implicit(tag)]
         version: u32,
         common_field: u32,
         variant2_specific: String,
@@ -49,12 +49,12 @@ struct NestedData {
 #[serde(untagged)]
 enum NestedEnum {
     Simple {
-        #[tag]
+        #[serde_implicit(tag)]
         tag: String,
         value: u32,
     },
     Complex {
-        #[tag]
+        #[serde_implicit(tag)]
         complex_tag: bool,
         nested: NestedData,
         optional: Option<String>,
@@ -64,12 +64,12 @@ enum NestedEnum {
 #[derive(serde_implicit_proc::Deserialize, serde::Serialize, Debug, PartialEq)]
 enum RecursiveEnum {
     Leaf {
-        #[tag]
+        #[serde_implicit(tag)]
         is_leaf: bool,
         value: String,
     },
     Node {
-        #[tag]
+        #[serde_implicit(tag)]
         has_children: bool,
         children: Vec<RecursiveEnum>,
         metadata: String,
@@ -83,7 +83,7 @@ mod edge_cases {
     #[derive(serde_implicit_proc::Deserialize, serde::Serialize, Debug, PartialEq)]
     enum SingleVariant {
         OnlyVariant {
-            #[tag]
+            #[serde_implicit(tag)]
             this_is_it: bool,
             data: String,
         },

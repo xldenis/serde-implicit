@@ -6,18 +6,18 @@ fn test_basic() {
     // #[serde(untagged)]
     enum MultiTypeTag {
         StringVariant {
-            #[tag]
+            #[serde_implicit(tag)]
             string_tag: String,
             value: u32,
         },
         NumberVariant {
-            #[tag]
+            #[serde_implicit(tag)]
             number_tag: u64,
             value: String,
             unique_field: String,
         },
         BoolVariant {
-            #[tag]
+            #[serde_implicit(tag)]
             bool_tag: bool,
             value: Vec<String>,
         },

@@ -1,4 +1,4 @@
-error: missing `#[tag]`
+error: missing `#[serde_implicit(tag)]`
  --> tests/ui/missing_tags.rs:3:16
   |
 3 |       MissingTag {

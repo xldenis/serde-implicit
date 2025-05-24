@@ -1,11 +1,11 @@
-error: duplicate `#[tag]` annotations found, only one field can be tagged
+error: duplicate `#[serde_implicit(tag)]` annotations found, only one field can be tagged
  --> tests/ui/duplicate_tags.rs:3:18
   |
 3 |       DoubleTagged {
   |  __________________^
-4 | |         #[tag]
+4 | |         #[serde_implicit(tag)]
 5 | |         primary_tag: String,
-6 | |         #[tag]
+6 | |         #[serde_implicit(tag)]
 7 | |         secondary_tag: bool,
 8 | |         value: u32,
 9 | |     },

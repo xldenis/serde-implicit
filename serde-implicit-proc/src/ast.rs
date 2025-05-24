@@ -61,16 +61,37 @@ fn parse_variant(v: syn::Variant) -> syn::Result<Variant> {
         }
     };
 
-    // Find all fields with #[tag] attribute
-    let tagged_fields: Vec<_> = named
-        .named
-        .iter()
-        .filter(|x| x.attrs.iter().any(|a| a.path().is_ident(TAG)))
-        .collect();
+    // Find all fields with #[serde_implicit(tag)] attribute
+    let mut tagged_fields = vec![];
+
+    for field in &named.named {
+        let mut has_tag = false;
+        field
+            .attrs
+            .iter()
+            .filter(|a| a.path().is_ident("serde_implicit"))
+            .try_for_each(|attr| {
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident(TAG) {
+                        has_tag = true;
+                        Ok(())
+                    } else {
+                        Err(Error::new_spanned(attr, "omg"))
+                    }
+                })
+            })?;
+
+        if has_tag {
+            tagged_fields.push(field);
+        }
+    }
 
     match tagged_fields.len() {
         0 => {
-            return Err(Error::new_spanned(named, "missing `#[tag]`"));
+            return Err(Error::new_spanned(
+                named,
+                "missing `#[serde_implicit(tag)]`",
+            ));
         }
         1 => {
             tag = tagged_fields[0].ident.clone().unwrap();
@@ -78,7 +99,7 @@ fn parse_variant(v: syn::Variant) -> syn::Result<Variant> {
         _ => {
             return Err(Error::new_spanned(
                 named,
-                "duplicate `#[tag]` annotations found, only one field can be tagged",
+                "duplicate `#[serde_implicit(tag)]` annotations found, only one field can be tagged",
             ));
         }
     };

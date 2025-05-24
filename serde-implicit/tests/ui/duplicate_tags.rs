@@ -1,14 +1,14 @@
 #[derive(serde_implicit_proc::Deserialize)]
 enum MultiTagFields {
     DoubleTagged {
-        #[tag]
+        #[serde_implicit(tag)]
         primary_tag: String,
-        #[tag]
+        #[serde_implicit(tag)]
         secondary_tag: bool,
         value: u32,
     },
     SingleTagged {
-        #[tag]
+        #[serde_implicit(tag)]
         only_tag: u32,
         value: String,
     },

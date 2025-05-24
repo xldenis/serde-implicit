@@ -26,7 +26,7 @@ Even when your enum types have completely disjoint fields, serde will blindly at
 "data did not match any variant of untagged enum Message"
 ```
 
-`serde-implicit` solves this problem by introducing an *implicitly* tagged enum representation. Each variant can be have a field annotated with `#[serde(tag)]`, and when that field is seen in input we can "commit" to parsing that variant, producing better error messages as a side-effect.
+`serde-implicit` solves this problem by introducing an *implicitly* tagged enum representation. Each variant can be have a field annotated with `#[serde_implicit(tag)]`, and when that field is seen in input we can "commit" to parsing that variant, producing better error messages as a side-effect.
 
 ```
 { "content": "oops i mislabeled my field", "username": "xldenis", "timestamp": 1234 }

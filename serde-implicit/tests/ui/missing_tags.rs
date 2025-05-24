@@ -6,7 +6,7 @@ enum OopsTag {
         value: u32,
     },
     SingleTagged {
-        #[tag]
+        #[serde_implicit(tag)]
         only_tag: u32,
         value: String,
     },
