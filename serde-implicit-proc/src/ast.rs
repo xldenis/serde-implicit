@@ -1,11 +1,19 @@
 use std::collections::HashSet;
 
-use syn::{DeriveInput, Error, Field, FieldsNamed, Generics, Ident};
+use syn::{
+    DeriveInput, Error, Field, FieldsNamed, FieldsUnnamed, Generics, Ident, punctuated::Punctuated,
+    token::Comma,
+};
 
 pub struct Variant {
     pub ident: Ident,
     pub tag: Ident,
     pub fields: FieldsNamed,
+}
+
+pub struct TupleVariant {
+    pub ident: Ident,
+    pub fields: FieldsUnnamed,
 }
 
 pub type Fields = FieldsNamed;
@@ -14,9 +22,15 @@ pub struct Enum {
     pub ident: Ident,
     pub generics: Generics,
 
-    pub variants: Vec<Variant>,
+    pub vars: Style,
+}
 
-    pub fallthrough: Option<Fallthrough>,
+pub enum Style {
+    Tuple(Vec<TupleVariant>),
+    Struct {
+        variants: Vec<Variant>,
+        fallthrough: Option<Fallthrough>,
+    },
 }
 
 /// A fallthrough variant for `serde-implicit`
@@ -28,7 +42,7 @@ pub struct Fallthrough {
 pub const TAG: &'static str = "tag";
 
 pub fn parse_data(input: DeriveInput) -> syn::Result<Enum> {
-    let mut enum_ = match input.data {
+    let enum_ = match input.data {
         syn::Data::Enum(data_enum) => data_enum,
         _ => {
             return Err(Error::new_spanned(
@@ -38,11 +52,31 @@ pub fn parse_data(input: DeriveInput) -> syn::Result<Enum> {
         }
     };
 
+    let variants = match enum_.variants.first().map(|v| &v.fields) {
+        Some(syn::Fields::Named(_)) => parse_struct_variants(enum_.variants)?,
+        Some(syn::Fields::Unnamed(_)) => parse_enum_variants(enum_.variants)?,
+        Some(syn::Fields::Unit) => todo!(),
+        None => Style::Tuple(vec![]),
+    };
+
+    Ok(Enum {
+        ident: input.ident,
+        generics: input.generics,
+        vars: variants,
+    })
+}
+
+enum VarOrFall {
+    Var(Variant),
+    Fall(Fallthrough),
+}
+
+fn parse_struct_variants(mut enum_variants: Punctuated<syn::Variant, Comma>) -> syn::Result<Style> {
     let mut variants = vec![];
 
-    let last_var = enum_.variants.pop();
+    let last_var = enum_variants.pop();
 
-    for v in enum_.variants {
+    for v in enum_variants {
         let variant = parse_variant(v)?;
         variants.push(variant);
     }
@@ -65,17 +99,28 @@ pub fn parse_data(input: DeriveInput) -> syn::Result<Enum> {
         }
     }
 
-    Ok(Enum {
-        ident: input.ident,
-        generics: input.generics,
+    Ok(Style::Struct {
         fallthrough,
         variants,
     })
 }
 
-enum VarOrFall {
-    Var(Variant),
-    Fall(Fallthrough),
+fn parse_enum_variants(enum_variants: Punctuated<syn::Variant, Comma>) -> syn::Result<Style> {
+    let mut variants = vec![];
+
+    for v in enum_variants {
+        let variant = match v.fields {
+            syn::Fields::Named(_) => return Err(Error::new_spanned(v, "blah")),
+            syn::Fields::Unnamed(fields_unnamed) => TupleVariant {
+                ident: v.ident,
+                fields: fields_unnamed,
+            },
+            syn::Fields::Unit => return Err(Error::new_spanned(v, "blah")),
+        };
+        variants.push(variant);
+    }
+
+    Ok(Style::Tuple(variants))
 }
 
 fn parse_variant_or_fallthrough(v: &syn::Variant, can_fallthrough: bool) -> syn::Result<VarOrFall> {

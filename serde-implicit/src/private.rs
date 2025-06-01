@@ -1,4 +1,5 @@
 use std::fmt;
+use std::marker::PhantomData;
 
 use serde::__private::de::{Content, ContentDeserializer};
 use serde::de::{self, IntoDeserializer, MapAccess, Unexpected};

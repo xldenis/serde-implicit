@@ -10,7 +10,7 @@ mod tuple_enum;
 pub fn derive_serialize(input: TS1) -> TS1 {
     let input = parse_macro_input!(input as DeriveInput);
 
-    let ts = tuple_enum::expand_tuple_enum(input)
+    let ts = expand::expand_derive_serialize(input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into();
 

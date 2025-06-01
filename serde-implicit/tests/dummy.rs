@@ -2,6 +2,7 @@ use serde_json::json;
 
 #[test]
 fn test_basic() {
+    #[allow(dead_code)]
     #[derive(serde_implicit_proc::Deserialize, Debug)]
     // #[serde(untagged)]
     enum MultiTypeTag {
@@ -63,7 +64,46 @@ fn test_basic() {
 }
 
 #[test]
+fn tuple_basic() {
+    #[derive(serde_implicit::Deserialize, Debug, PartialEq)]
+    enum TupleEnum {
+        Case1(bool, u32),
+        Case2(u32),
+    }
+
+    let res: Result<TupleEnum, _> = serde_json::from_value(json!([true, 0]));
+    assert!(res.is_ok());
+
+    let res: Result<TupleEnum, _> = serde_json::from_value(json!([0]));
+
+    assert_eq!(res.unwrap(), TupleEnum::Case2(0));
+}
+
+#[test]
+fn tuple_overlap() {
+    // Because `serde-implicit` commits to the first variant which parses a tag
+    // with tuple enums, this can lead to variants being impossible to deserialize
+    // like `Case2` is here.
+    #[derive(serde_implicit::Deserialize, Debug, PartialEq)]
+    enum TupleEnum {
+        Case1(bool, u32),
+        Case2(bool, bool),
+    }
+
+    let res: Result<TupleEnum, _> = serde_json::from_value(json!([true, true]));
+    let err = res.unwrap_err();
+    assert!(
+        matches!(
+            &*err.to_string(),
+            r#"invalid type: boolean `true`, expected u32"#
+        ),
+        "{err}",
+    );
+}
+
+#[test]
 fn fallthrough_basic() {
+    #[allow(dead_code)]
     #[derive(serde_implicit_proc::Deserialize, Debug)]
     enum EnumWithFallThrough<T> {
         Multiple {
