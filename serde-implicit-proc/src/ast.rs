@@ -14,6 +14,7 @@ pub struct Variant {
 pub struct TupleVariant {
     pub ident: Ident,
     pub fields: FieldsUnnamed,
+    pub tag_position: usize,
 }
 
 pub type Fields = FieldsNamed;
@@ -54,7 +55,7 @@ pub fn parse_data(input: DeriveInput) -> syn::Result<Enum> {
 
     let variants = match enum_.variants.first().map(|v| &v.fields) {
         Some(syn::Fields::Named(_)) => parse_struct_variants(enum_.variants)?,
-        Some(syn::Fields::Unnamed(_)) => parse_enum_variants(enum_.variants)?,
+        Some(syn::Fields::Unnamed(_)) => parse_tuple_enums(enum_.variants)?,
         Some(syn::Fields::Unit) => todo!(),
         None => Style::Tuple(vec![]),
     };
@@ -105,18 +106,40 @@ fn parse_struct_variants(mut enum_variants: Punctuated<syn::Variant, Comma>) -> 
     })
 }
 
-fn parse_enum_variants(enum_variants: Punctuated<syn::Variant, Comma>) -> syn::Result<Style> {
+fn parse_tuple_enums(enum_variants: Punctuated<syn::Variant, Comma>) -> syn::Result<Style> {
     let mut variants = vec![];
 
     for v in enum_variants {
-        let variant = match v.fields {
+        let fields_unnamed = match v.fields {
             syn::Fields::Named(_) => return Err(Error::new_spanned(v, "blah")),
-            syn::Fields::Unnamed(fields_unnamed) => TupleVariant {
-                ident: v.ident,
-                fields: fields_unnamed,
-            },
+            syn::Fields::Unnamed(fields_unnamed) => fields_unnamed,
             syn::Fields::Unit => return Err(Error::new_spanned(v, "blah")),
         };
+
+        let mut tag_ix = 0;
+        for (ix, field) in fields_unnamed.unnamed.iter().enumerate() {
+            field
+                .attrs
+                .iter()
+                .filter(|a| a.path().is_ident("serde_implicit"))
+                .try_for_each(|attr| {
+                    attr.parse_nested_meta(|meta| {
+                        if meta.path.is_ident(TAG) {
+                            tag_ix = ix;
+                            Ok(())
+                        } else {
+                            Err(Error::new_spanned(attr, "omg"))
+                        }
+                    })
+                })?;
+        }
+
+        let variant = TupleVariant {
+            ident: v.ident,
+            fields: fields_unnamed,
+            tag_position: tag_ix,
+        };
+
         variants.push(variant);
     }
 

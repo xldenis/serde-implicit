@@ -1,16 +1,18 @@
+use itertools::Itertools;
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
 use syn::Ident;
 
 use crate::ast::{self};
 
+// precondition `variants` are sorted by `tag_position`.
 pub fn tuple_variant_enum(ty_name: &Ident, variants: &[ast::TupleVariant]) -> TokenStream {
     use quote::{format_ident, quote};
 
     let variant_enum_variants = variants.iter().enumerate().map(|(i, variant)| {
         let variant_ident = format_ident!("__variant{}", i);
-
-        if let Some(field) = variant.fields.unnamed.iter().next() {
+        if variant.fields.unnamed.len() > 0 {
+            let field = &variant.fields.unnamed[variant.tag_position];
             let field_type = &field.ty;
             quote! { #variant_ident(#field_type) }
         } else {
@@ -22,10 +24,16 @@ pub fn tuple_variant_enum(ty_name: &Ident, variants: &[ast::TupleVariant]) -> To
         #(#variant_enum_variants,)*
     };
 
-    let deserialize_variant_arms = variants.iter().enumerate().map(|(i, variant)| {
-        let variant_ident = format_ident!("__variant{}", i);
+    let variants_by_group = variants
+        .iter()
+        .enumerate()
+        .chunk_by(|(_, var)| var.tag_position);
 
-        if let Some(field) = variant.fields.unnamed.iter().next() {
+    let deserialize_variant_arms = variants_by_group.into_iter().map(|(tag_ix, variant)| {
+        let tests = variant.into_iter().map(|(i, variant)| {
+            let variant_ident = format_ident!("__variant{}", i);
+
+            let field = &variant.fields.unnamed[tag_ix];
             let field_type = &field.ty;
 
             quote! {
@@ -34,8 +42,12 @@ pub fn tuple_variant_enum(ty_name: &Ident, variants: &[ast::TupleVariant]) -> To
                     return serde::__private::Ok(__Variant::#variant_ident(__ok));
                 }
             }
-        } else {
-            quote! {}
+        });
+
+        quote! {
+            let __grp = &__elements[#tag_ix];
+            let __deserializer = serde::__private::de::ContentRefDeserializer::<E,>::new(__grp);
+            #(#tests)*
         }
     });
 
@@ -49,10 +61,10 @@ pub fn tuple_variant_enum(ty_name: &Ident, variants: &[ast::TupleVariant]) -> To
 
 
         fn deserialize_variant<E : serde::de::Error>(
-            __deserializer: serde::__private::de::ContentRefDeserializer<'_, '_, E>) -> serde::__private::Result<__Variant, E> {
+            __elements: &[serde::__private::de::Content]) -> serde::__private::Result<__Variant, E> {
             #(#deserialize_variant_arms)*
 
-            let _any = <serde::__private::de::Content as serde::Deserialize>::deserialize(__deserializer)?;
+            let _any = serde::__private::de::Content::Seq(__elements.into());
             // If none of the variants matched
             serde::__private::Err(serde::de::Error::invalid_value(serde_implicit::__private::unexpected(&_any), &#expected_str))
 
@@ -74,36 +86,34 @@ pub fn expand_tuple_enum(
 
         let field_count = fields.unnamed.len();
 
-        // Simple case for variants with just one field
-        if field_count == 1 {
-            variant_arms.push(quote! {
-                __Variant::#variant_ident(__value) => {
+        // // Simple case for variants with just one field
+        // if field_count == 1 {
+        //     variant_arms.push(quote! {
+        //         __Variant::#variant_ident(__value) => {
 
-                    if let Some(serde::__private::de::Content::Seq(s)) =  __content {
-                        if s.len() > 0 {
-                            return serde::__private::Err(
-                                serde::de::Error::invalid_length(
-                                    0,
-                                    &concat!("tuple variant ", stringify!(#ty_name), "::", stringify!(#original_variant_ident), " with ", stringify!(#field_count), " elements"),
-                                ),
-                            );
-                        }
-                    } else {
-                        todo!()
-                    };
+        //             if let Some(serde::__private::de::Content::Seq(s)) =  __content {
+        //                 if s.len() > 0 {
+        //                     return serde::__private::Err(
+        //                         serde::de::Error::invalid_length(
+        //                             0,
+        //                             &concat!("tuple variant ", stringify!(#ty_name), "::", stringify!(#original_variant_ident), " with ", stringify!(#field_count), " elements"),
+        //                         ),
+        //                     );
+        //                 }
+        //             } else {
+        //                 todo!()
+        //             };
 
-                    Ok(#ty_name::#original_variant_ident(__value))
-                }
-            });
-            continue;
-        }
+        //             Ok(#ty_name::#original_variant_ident(__value))
+        //         }
+        //     });
+        //     continue;
+        // }
 
-        // For variants with multiple fields, we need to generate a visitor
         let visitor_name = format_ident!("__{}Visitor", original_variant_ident);
 
-        // Generate code for deserializing each field
-        let field_deserialize = fields.unnamed.iter().skip(1).enumerate().map(|(j, field)| {
-            let field_name = format_ident!("__field{}", j + 1); // Start from 1 since the first field is already handled
+        let field_deserialize = fields.unnamed.iter().enumerate().map(|(j, field)| {
+            let field_name = format_ident!("__field{}", j);
             let field_type = &field.ty;
             let idx = proc_macro2::Literal::usize_unsuffixed(j);
 
@@ -122,8 +132,7 @@ pub fn expand_tuple_enum(
             }
         });
 
-        // Generate the fields for constructing the variant
-        let field_names = (1..field_count).map(|j| format_ident!("__field{}", j));
+        let field_names = (0..field_count).map(|j| format_ident!("__field{}", j));
 
         let variant_str = format!("tuple variant {}::{}", ty_name, original_variant_ident);
         // let variant_elements_str = format!("tuple variant {}::{} with {} elements",
@@ -131,14 +140,14 @@ pub fn expand_tuple_enum(
 
         // For variants with multiple fields, we use the first field from __Variant
         // and deserialize the remaining fields with a visitor
-        let field_count_remaining = field_count - 1;
-        let tag_ty = &fields.unnamed.first().as_ref().unwrap().ty;
+        // let field_count_remaining = field_count - 1;
+        // let tag_ty = &fields.unnamed.first().as_ref().unwrap().ty;
         variant_arms.push(quote! {
             __Variant::#variant_ident(__first_field) => {
                 #[doc(hidden)]
                 struct #visitor_name {
                     marker: serde::__private::PhantomData<#ty_name>,
-                    first_field: #tag_ty,
+                    // first_field: #tag_ty,
                 }
 
                 impl<'de> serde::de::Visitor<'de> for #visitor_name {
@@ -159,21 +168,20 @@ pub fn expand_tuple_enum(
                     where
                         __A: serde::de::SeqAccess<'de>,
                     {
-                        // Skip deserializing the first field since we already have it
                         #(#field_deserialize)*
 
-                        serde::__private::Ok(#ty_name::#original_variant_ident(self.first_field #(, #field_names)*))
+                        serde::__private::Ok(#ty_name::#original_variant_ident(#(#field_names),*))
                     }
                 }
 
-                let __deserializer = serde::__private::de::ContentDeserializer::<__D::Error>::new(__content.unwrap());
+                let __deserializer = serde::__private::de::ContentDeserializer::<__D::Error>::new(__content);
 
                 serde::Deserializer::deserialize_tuple(
                     __deserializer,
-                    #field_count_remaining,
+                    #field_count,
                     #visitor_name {
                         marker: serde::__private::PhantomData::<#ty_name>,
-                        first_field: __first_field,
+                        // first_field: __first_field,
                     },
                 )
             }
@@ -185,11 +193,12 @@ pub fn expand_tuple_enum(
             __deserializer,
         )?;
 
-        let (tag, __content) = serde_implicit::__private::pop_front(__content)?;
+        // let (tag, __content) = serde_implicit::__private::pop_front(__content)?;
 
-        let __deserializer = serde::__private::de::ContentRefDeserializer::<__D::Error,>::new(&tag);
+        // let __deserializer = serde::__private::de::ContentRefDeserializer::<__D::Error,>::new(&tag);
 
-        let __tag = deserialize_variant(__deserializer)?;
+        let __fields = serde_implicit::__private::as_slice(&__content)?;
+        let __tag = deserialize_variant(__fields)?;
 
         match __tag {
             #(#variant_arms)*

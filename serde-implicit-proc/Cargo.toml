@@ -12,6 +12,7 @@ description = "proc macros for serde-implicit"
 proc-macro = true
 
 [dependencies]
+itertools = "0.14.0"
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
 serde = { version = "1.0.219", features = ["derive"] }
