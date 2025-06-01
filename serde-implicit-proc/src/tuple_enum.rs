@@ -45,7 +45,7 @@ pub fn tuple_variant_enum(ty_name: &Ident, variants: &[ast::TupleVariant]) -> To
         });
 
         quote! {
-            let __grp = &__elements[#tag_ix];
+            let __grp = serde_implicit::__private::nth_elem(__elements, #tag_ix)?;
             let __deserializer = serde::__private::de::ContentRefDeserializer::<E,>::new(__grp);
             #(#tests)*
         }
@@ -61,10 +61,10 @@ pub fn tuple_variant_enum(ty_name: &Ident, variants: &[ast::TupleVariant]) -> To
 
 
         fn deserialize_variant<E : serde::de::Error>(
-            __elements: &[serde::__private::de::Content]) -> serde::__private::Result<__Variant, E> {
+            __elements: &serde::__private::de::Content) -> serde::__private::Result<__Variant, E> {
             #(#deserialize_variant_arms)*
 
-            let _any = serde::__private::de::Content::Seq(__elements.into());
+            let _any = __elements;
             // If none of the variants matched
             serde::__private::Err(serde::de::Error::invalid_value(serde_implicit::__private::unexpected(&_any), &#expected_str))
 
@@ -197,8 +197,7 @@ pub fn expand_tuple_enum(
 
         // let __deserializer = serde::__private::de::ContentRefDeserializer::<__D::Error,>::new(&tag);
 
-        let __fields = serde_implicit::__private::as_slice(&__content)?;
-        let __tag = deserialize_variant(__fields)?;
+        let __tag = deserialize_variant(&__content)?;
 
         match __tag {
             #(#variant_arms)*

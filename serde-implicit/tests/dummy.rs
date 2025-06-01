@@ -1,67 +1,67 @@
 use serde_json::json;
 
-// #[test]
-// fn test_basic() {
-//     #[allow(dead_code)]
-//     #[derive(serde_implicit_proc::Deserialize, Debug)]
-//     // #[serde(untagged)]
-//     enum MultiTypeTag {
-//         StringVariant {
-//             #[serde_implicit(tag)]
-//             string_tag: String,
-//             value: u32,
-//         },
-//         NumberVariant {
-//             #[serde_implicit(tag)]
-//             number_tag: u64,
-//             value: String,
-//             unique_field: String,
-//         },
-//         BoolVariant {
-//             #[serde_implicit(tag)]
-//             bool_tag: bool,
-//             value: Vec<String>,
-//         },
-//     }
+#[test]
+fn test_basic() {
+    #[allow(dead_code)]
+    #[derive(serde_implicit_proc::Deserialize, Debug)]
+    // #[serde(untagged)]
+    enum MultiTypeTag {
+        StringVariant {
+            #[serde_implicit(tag)]
+            string_tag: String,
+            value: u32,
+        },
+        NumberVariant {
+            #[serde_implicit(tag)]
+            number_tag: u64,
+            value: String,
+            unique_field: String,
+        },
+        BoolVariant {
+            #[serde_implicit(tag)]
+            bool_tag: bool,
+            value: Vec<String>,
+        },
+    }
 
-//     let res: Result<MultiTypeTag, _> =
-//         serde_json::from_value(json!({ "string_tag": "", "value": 0 }));
-//     assert!(res.is_ok());
+    let res: Result<MultiTypeTag, _> =
+        serde_json::from_value(json!({ "string_tag": "", "value": 0 }));
+    assert!(res.is_ok());
 
-//     let res: Result<MultiTypeTag, _> =
-//         serde_json::from_value(json!({ "string_tag": "", "value": 0, "extra_field": "1234" }));
-//     assert!(res.is_ok());
+    let res: Result<MultiTypeTag, _> =
+        serde_json::from_value(json!({ "string_tag": "", "value": 0, "extra_field": "1234" }));
+    assert!(res.is_ok());
 
-//     let res: Result<MultiTypeTag, _> =
-//         serde_json::from_value(json!({ "string_tag": "", "value": "straing" }));
+    let res: Result<MultiTypeTag, _> =
+        serde_json::from_value(json!({ "string_tag": "", "value": "straing" }));
 
-//     let err = res.unwrap_err();
-//     assert!(
-//         matches!(
-//             &*err.to_string(),
-//             r#"invalid type: string "straing", expected u32"#
-//         ),
-//         "{err}",
-//     );
+    let err = res.unwrap_err();
+    assert!(
+        matches!(
+            &*err.to_string(),
+            r#"invalid type: string "straing", expected u32"#
+        ),
+        "{err}",
+    );
 
-//     let res: Result<MultiTypeTag, _> = serde_json::from_value(json!({ "string_tag": "" }));
+    let res: Result<MultiTypeTag, _> = serde_json::from_value(json!({ "string_tag": "" }));
 
-//     let err = res.unwrap_err();
-//     assert!(
-//         matches!(&*err.to_string(), r#"missing field `value`"#),
-//         "{err}",
-//     );
+    let err = res.unwrap_err();
+    assert!(
+        matches!(&*err.to_string(), r#"missing field `value`"#),
+        "{err}",
+    );
 
-//     // output specific error message about `unique_field` (if constructor is `deny_unknown_fields`)
-//     // let res: Result<MultiTypeTag, _> =
-//     //     serde_json::from_value(json!({ "string_tag": "", "unique_field": "" }));
+    // output specific error message about `unique_field` (if constructor is `deny_unknown_fields`)
+    // let res: Result<MultiTypeTag, _> =
+    //     serde_json::from_value(json!({ "string_tag": "", "unique_field": "" }));
 
-//     // let err = res.unwrap_err();
-//     // assert!(
-//     //     matches!(&*err.to_string(), r#"missing field `value`"#),
-//     //     "{err}",
-//     // );
-// }
+    // let err = res.unwrap_err();
+    // assert!(
+    //     matches!(&*err.to_string(), r#"missing field `value`"#),
+    //     "{err}",
+    // );
+}
 
 #[test]
 fn tuple_basic() {
@@ -83,78 +83,99 @@ fn tuple_basic() {
 
     assert!(res.is_ok(), "{res:?}");
 
-    let res: Result<TupleEnum, _> = serde_json::from_value(json!(["bad", 32]));
-
-    assert!(res.is_ok(), "{res:?}");
+    // unclear what error should be generated for cases where we are missing all the tags
+    // let res: Result<TupleEnum, _> = serde_json::from_value(json!(["bad", 32]));
+    // assert!(res.is_ok(), "{res:?}");
     // assert_eq!(res.unwrap(), TupleEnum::Case2(0, 0));
 }
 
-// #[test]
-// fn tuple_overlap() {
-//     // Because `serde-implicit` commits to the first variant which parses a tag
-//     // with tuple enums, this can lead to variants being impossible to deserialize
-//     // like `Case2` is here.
-//     #[derive(serde_implicit::Deserialize, Debug, PartialEq)]
-//     enum TupleEnum {
-//         Case1(bool, u32),
-//         Case2(bool, bool),
-//     }
+#[test]
+fn tuple_unit_fields() {
+    #[derive(serde_implicit::Deserialize, Debug, PartialEq)]
+    enum TupleEnum {
+        Case1(u32),
+        Case2(bool),
+    }
 
-//     let res: Result<TupleEnum, _> = serde_json::from_value(json!([true, true]));
-//     let err = res.unwrap_err();
-//     assert!(
-//         matches!(
-//             &*err.to_string(),
-//             r#"invalid type: boolean `true`, expected u32"#
-//         ),
-//         "{err}",
-//     );
-// }
+    let res: Result<TupleEnum, _> = serde_json::from_value(json!([0]));
+    assert!(res.is_ok(), "{res:?}");
 
-// #[test]
-// fn fallthrough_basic() {
-//     #[allow(dead_code)]
-//     #[derive(serde_implicit_proc::Deserialize, Debug)]
-//     enum EnumWithFallThrough<T> {
-//         Multiple {
-//             #[serde_implicit(tag)]
-//             variants: Vec<u32>,
-//         },
-//         Single {
-//             one: T,
-//         },
-//     }
+    let res: Result<TupleEnum, _> = serde_json::from_value(json!([true]));
 
-//     // #[derive(serde::Deserialize)]
-//     // struct Other {
-//     //     field: u32,
-//     // }
+    assert!(res.is_ok(), "{res:?}");
 
-//     let res: Result<EnumWithFallThrough<u32>, _> = serde_json::from_value(json!(42));
-//     res.unwrap();
+    // unclear what error should be generated for cases where we are missing all the tags
+    // let res: Result<TupleEnum, _> = serde_json::from_value(json!(["bad", 32]));
+    // assert!(res.is_ok(), "{res:?}");
+    // assert_eq!(res.unwrap(), TupleEnum::Case2(0, 0));
+}
 
-//     let res: Result<EnumWithFallThrough<u32>, _> = serde_json::from_value(json!(42.5));
-//     let err = res.unwrap_err();
+#[test]
+fn tuple_overlap() {
+    // Because `serde-implicit` commits to the first variant which parses a tag
+    // with tuple enums, this can lead to variants being impossible to deserialize
+    // like `Case2` is here.
+    #[derive(serde_implicit::Deserialize, Debug, PartialEq)]
+    enum TupleEnum {
+        Case1(bool, u32),
+        Case2(bool, bool),
+    }
 
-//     assert!(
-//         matches!(
-//             &*err.to_string(),
-//             // todo provide more specific diagnostics
-//             r#"invalid type: floating point `42.5`, expected EnumWithFallThrough"#
-//         ),
-//         "{err}",
-//     );
+    let res: Result<TupleEnum, _> = serde_json::from_value(json!([true, true]));
+    let err = res.unwrap_err();
+    assert!(
+        matches!(
+            &*err.to_string(),
+            r#"invalid type: boolean `true`, expected u32"#
+        ),
+        "{err}",
+    );
+}
 
-//     let res: Result<EnumWithFallThrough<u32>, _> =
-//         serde_json::from_value(json!({"variants": [32]}));
-//     res.unwrap();
-// }
+#[test]
+fn fallthrough_basic() {
+    #[allow(dead_code)]
+    #[derive(serde_implicit_proc::Deserialize, Debug)]
+    enum EnumWithFallThrough<T> {
+        Multiple {
+            #[serde_implicit(tag)]
+            variants: Vec<u32>,
+        },
+        Single {
+            one: T,
+        },
+    }
 
-// #[test]
-// fn ui() {
-//     let t = trybuild::TestCases::new();
-//     t.compile_fail("tests/ui/*.rs");
-// }
+    // #[derive(serde::Deserialize)]
+    // struct Other {
+    //     field: u32,
+    // }
+
+    let res: Result<EnumWithFallThrough<u32>, _> = serde_json::from_value(json!(42));
+    res.unwrap();
+
+    let res: Result<EnumWithFallThrough<u32>, _> = serde_json::from_value(json!(42.5));
+    let err = res.unwrap_err();
+
+    assert!(
+        matches!(
+            &*err.to_string(),
+            // todo provide more specific diagnostics
+            r#"invalid type: floating point `42.5`, expected EnumWithFallThrough"#
+        ),
+        "{err}",
+    );
+
+    let res: Result<EnumWithFallThrough<u32>, _> =
+        serde_json::from_value(json!({"variants": [32]}));
+    res.unwrap();
+}
+
+#[test]
+fn ui() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/*.rs");
+}
 
 // musings on test coverage
 

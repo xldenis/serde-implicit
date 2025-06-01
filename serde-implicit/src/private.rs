@@ -138,13 +138,15 @@ pub fn pop_front<'de, E: serde::de::Error>(
     }
 }
 
-pub fn as_slice<'a, 'de, E: serde::de::Error>(
+// it should be an array
+pub fn nth_elem<'a, 'de, E: serde::de::Error>(
     c: &'a Content<'de>,
-) -> serde::__private::Result<&'a [Content<'de>], E> {
+    ix: usize,
+) -> serde::__private::Result<&'a Content<'de>, E> {
     match c {
-        Content::Seq(s) => Ok(&*s),
+        Content::Seq(s) => Ok(&s[ix]),
         // TODO add support for single field variants
-        _ => todo!(), // serde::__private::de::missing_field("missing tag"),
+        _ => serde::__private::de::missing_field("missing tag").map(|_: Content<'de>| todo!()),
     }
 }
 
