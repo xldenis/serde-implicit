@@ -4,7 +4,7 @@ version = "0.1.1"
 edition = "2024"
 license = "MIT"
 authors = ["Xavier Denis <git@xav.io>"]
-homepage = "https://github.com/xldenis/serde-implicit"
+repository = "https://github.com/xldenis/serde-implicit"
 description = "the serde(untagged) you wish you had"
 
 [dependencies]
