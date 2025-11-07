@@ -4,6 +4,7 @@ use syn::Ident;
 
 use crate::ast::{self};
 
+#[allow(dead_code)]
 pub fn tuple_variant_enum(ty_name: &Ident, variants: &[ast::TupleVariant]) -> TokenStream {
     use quote::{format_ident, quote};
 
@@ -64,135 +65,120 @@ pub fn expand_tuple_enum(
     ty_name: &Ident,
     variants: &[ast::TupleVariant],
 ) -> syn::Result<proc_macro2::TokenStream> {
-    let mut variant_arms = vec![];
+    let mut variant_trials = vec![];
 
-    for (i, v) in variants.iter().enumerate() {
-        let variant_ident = format_ident!("__variant{}", i);
-        let original_variant_ident = &v.ident;
-
+    for v in variants.iter() {
+        let variant_ident = &v.ident;
         let fields = &v.fields;
-
         let field_count = fields.unnamed.len();
+        let tag_index = v.tag_index;
 
-        // Simple case for variants with just one field
-        if field_count == 1 {
-            variant_arms.push(quote! {
-                __Variant::#variant_ident(__value) => {
+        // Get the tag field type
+        let tag_field = fields.unnamed.iter().nth(tag_index).ok_or_else(|| {
+            syn::Error::new_spanned(
+                &v.ident,
+                format!("tag_index {} out of bounds for variant with {} fields", tag_index, field_count),
+            )
+        })?;
+        let tag_type = &tag_field.ty;
 
-                    if let Some(serde::__private::de::Content::Seq(s)) =  __content {
-                        if s.len() > 0 {
-                            return serde::__private::Err(
-                                serde::de::Error::invalid_length(
-                                    0,
-                                    &concat!("tuple variant ", stringify!(#ty_name), "::", stringify!(#original_variant_ident), " with ", stringify!(#field_count), " elements"),
-                                ),
-                            );
-                        }
-                    } else {
-                        todo!()
-                    };
-
-                    Ok(#ty_name::#original_variant_ident(__value))
+        // Generate field names for all fields except the tag
+        let field_constructions: Vec<_> = (0..field_count)
+            .map(|i| {
+                if i == tag_index {
+                    (i, quote! { __tag }, true)
+                } else {
+                    let adjusted_i = if i > tag_index { i - 1 } else { i };
+                    let field_name = format_ident!("__field{}", adjusted_i);
+                    (i, quote! { #field_name }, false)
                 }
-            });
-            continue;
-        }
+            })
+            .collect();
 
-        // For variants with multiple fields, we need to generate a visitor
-        let visitor_name = format_ident!("__{}Visitor", original_variant_ident);
+        // Generate deserialization for non-tag fields with error propagation (commit on tag match)
+        let field_deserializations: Vec<_> = fields.unnamed.iter().enumerate()
+            .filter(|(i, _)| *i != tag_index)
+            .map(|(i, field)| {
+                let field_type = &field.ty;
+                let seq_index = proc_macro2::Literal::usize_unsuffixed(i);
+                let adjusted_i = if i > tag_index { i - 1 } else { i };
+                let field_name = format_ident!("__field{}", adjusted_i);
 
-        // Generate code for deserializing each field
-        let field_deserialize = fields.unnamed.iter().skip(1).enumerate().map(|(j, field)| {
-            let field_name = format_ident!("__field{}", j + 1); // Start from 1 since the first field is already handled
-            let field_type = &field.ty;
-            let idx = proc_macro2::Literal::usize_unsuffixed(j);
+                quote! {
+                    let #field_name = <#field_type as serde::Deserialize>::deserialize(
+                        serde::__private::de::ContentRefDeserializer::<__D::Error>::new(&__seq[#seq_index])
+                    )?;
+                }
+            })
+            .collect();
 
+        // Collect field construction values
+        let field_construction_values: Vec<_> = field_constructions.iter().map(|(_, val, _)| val).collect();
+        let tag_index_lit = proc_macro2::Literal::usize_unsuffixed(tag_index);
+        let field_count_lit = proc_macro2::Literal::usize_unsuffixed(field_count);
+
+        // Generate trial block for this variant
+        let trial = if field_count == 1 && tag_index == 0 {
+            // Special case: single-field variant with tag at position 0
             quote! {
-                let #field_name = match serde::de::SeqAccess::next_element::<#field_type>(&mut __seq)? {
-                    serde::__private::Some(__value) => __value,
-                    serde::__private::None => {
-                        return serde::__private::Err(
-                            serde::de::Error::invalid_length(
-                                #idx,
-                                &concat!("tuple variant ", stringify!(#ty_name), "::", stringify!(#original_variant_ident), " with ", stringify!(#field_count), " elements"),
-                            ),
-                        );
+                // Try variant #variant_ident (single field)
+                if let serde::__private::de::Content::Seq(ref __seq) = __content {
+                    if __seq.len() == 1 {
+                        if let serde::__private::Ok(__tag) = <#tag_type as serde::Deserialize>::deserialize(
+                            serde::__private::de::ContentRefDeserializer::<__D::Error>::new(&__seq[0])
+                        ) {
+                            // Tag matched - committed to this variant
+                            return serde::__private::Ok(#ty_name::#variant_ident(__tag));
+                        }
                     }
-                };
-            }
-        });
-
-        // Generate the fields for constructing the variant
-        let field_names = (1..field_count).map(|j| format_ident!("__field{}", j));
-
-        let variant_str = format!("tuple variant {}::{}", ty_name, original_variant_ident);
-        // let variant_elements_str = format!("tuple variant {}::{} with {} elements",
-        //     ty_name, original_variant_ident, field_count);
-
-        // For variants with multiple fields, we use the first field from __Variant
-        // and deserialize the remaining fields with a visitor
-        let field_count_remaining = field_count - 1;
-        let tag_ty = &fields.unnamed.first().as_ref().unwrap().ty;
-        variant_arms.push(quote! {
-            __Variant::#variant_ident(__first_field) => {
-                #[doc(hidden)]
-                struct #visitor_name {
-                    marker: serde::__private::PhantomData<#ty_name>,
-                    first_field: #tag_ty,
-                }
-
-                impl<'de> serde::de::Visitor<'de> for #visitor_name {
-                    type Value = #ty_name;
-
-                    fn expecting(
-                        &self,
-                        __formatter: &mut serde::__private::Formatter,
-                    ) -> serde::__private::fmt::Result {
-                        serde::__private::Formatter::write_str(__formatter, #variant_str)
-                    }
-
-                    #[inline]
-                    fn visit_seq<__A>(
-                        self,
-                        mut __seq: __A,
-                    ) -> serde::__private::Result<Self::Value, __A::Error>
-                    where
-                        __A: serde::de::SeqAccess<'de>,
-                    {
-                        // Skip deserializing the first field since we already have it
-                        #(#field_deserialize)*
-
-                        serde::__private::Ok(#ty_name::#original_variant_ident(self.first_field #(, #field_names)*))
+                } else {
+                    // Try to deserialize the entire content as the tag
+                    if let serde::__private::Ok(__tag) = <#tag_type as serde::Deserialize>::deserialize(
+                        serde::__private::de::ContentDeserializer::<__D::Error>::new(__content.clone())
+                    ) {
+                        // Tag matched - committed to this variant
+                        return serde::__private::Ok(#ty_name::#variant_ident(__tag));
                     }
                 }
-
-                let __deserializer = serde::__private::de::ContentDeserializer::<__D::Error>::new(__content.unwrap());
-
-                serde::Deserializer::deserialize_tuple(
-                    __deserializer,
-                    #field_count_remaining,
-                    #visitor_name {
-                        marker: serde::__private::PhantomData::<#ty_name>,
-                        first_field: __first_field,
-                    },
-                )
             }
-        });
+        } else {
+            // Multi-field variant
+            quote! {
+                // Try variant #variant_ident with tag at position #tag_index
+                if let serde::__private::de::Content::Seq(ref __seq) = __content {
+                    if __seq.len() == #field_count_lit {
+                        // Try to deserialize tag at index #tag_index
+                        if let serde::__private::Ok(__tag) = <#tag_type as serde::Deserialize>::deserialize(
+                            serde::__private::de::ContentRefDeserializer::<__D::Error>::new(&__seq[#tag_index_lit])
+                        ) {
+                            // Tag matched - committed to this variant
+                            // Deserialize remaining fields (errors propagate with ?)
+                            #(#field_deserializations)*
+
+                            return serde::__private::Ok(#ty_name::#variant_ident(#(#field_construction_values),*));
+                        }
+                    }
+                }
+            }
+        };
+
+        variant_trials.push(trial);
     }
+
+    let expected_str = proc_macro2::Literal::string(&format!("a valid variant of {}", ty_name));
 
     Ok(quote! {
         let __content = <serde::__private::de::Content as serde::Deserialize>::deserialize(
             __deserializer,
         )?;
 
-        let (tag, __content) = serde_implicit::__private::pop_front(__content)?;
+        // Try each variant in order
+        #(#variant_trials)*
 
-        let __deserializer = serde::__private::de::ContentRefDeserializer::<__D::Error,>::new(&tag);
-
-        let __tag = deserialize_variant(__deserializer)?;
-
-        match __tag {
-            #(#variant_arms)*
-        }
+        // No variant matched
+        serde::__private::Err(serde::de::Error::custom(format!(
+            "data did not match any variant of enum {}",
+            #expected_str
+        )))
     })
 }

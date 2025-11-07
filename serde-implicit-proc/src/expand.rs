@@ -5,7 +5,7 @@ use syn::{Ident, WhereClause};
 
 use crate::{
     ast::{self, Fallthrough, Style},
-    tuple_enum::{expand_tuple_enum, tuple_variant_enum},
+    tuple_enum::expand_tuple_enum,
 };
 
 pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
@@ -51,7 +51,11 @@ pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macr
 
 pub fn enum_variant(enum_: &ast::Enum) -> proc_macro2::TokenStream {
     match &enum_.vars {
-        Style::Tuple(variants) => tuple_variant_enum(&enum_.ident, variants),
+        Style::Tuple(_) => {
+            // Tuple enums don't need separate variant enum generation
+            // All logic is handled inline in expand_tuple_enum
+            quote! {}
+        },
         Style::Struct {
             variants,
             fallthrough,

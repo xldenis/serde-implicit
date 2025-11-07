@@ -123,19 +123,36 @@ where
     }
 }
 
-pub fn pop_front<'de, E: serde::de::Error>(
+pub fn extract_at_index<'de, E: serde::de::Error>(
     c: Content<'de>,
+    index: usize,
 ) -> serde::__private::Result<(Content<'de>, Option<Content<'de>>), E> {
     match c {
         Content::Seq(mut s) => {
             if s.len() == 0 {
-                serde::__private::de::missing_field("missing tag")
+                serde::__private::de::missing_field("missing tag: sequence is empty")
+            } else if index >= s.len() {
+                serde::__private::de::missing_field("tag index out of bounds")
             } else {
-                Ok((s.remove(0), Some(Content::Seq(s))))
+                Ok((s.remove(index), Some(Content::Seq(s))))
             }
         }
-        c => Ok((c, None)),
+        c => {
+            if index == 0 {
+                Ok((c, None))
+            } else {
+                serde::__private::de::missing_field("tag index out of bounds for non-sequence")
+            }
+        }
     }
+}
+
+// Keep the old function for backwards compatibility
+#[deprecated(note = "Use extract_at_index instead")]
+pub fn pop_front<'de, E: serde::de::Error>(
+    c: Content<'de>,
+) -> serde::__private::Result<(Content<'de>, Option<Content<'de>>), E> {
+    extract_at_index(c, 0)
 }
 
 pub fn unexpected<'a>(c: &'a Content<'_>) -> serde::de::Unexpected<'a> {

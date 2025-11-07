@@ -14,6 +14,7 @@ pub struct Variant {
 pub struct TupleVariant {
     pub ident: Ident,
     pub fields: FieldsUnnamed,
+    pub tag_index: usize,
 }
 
 pub type Fields = FieldsNamed;
@@ -105,15 +106,53 @@ fn parse_struct_variants(mut enum_variants: Punctuated<syn::Variant, Comma>) -> 
     })
 }
 
+fn has_tag_attribute(field: &Field) -> syn::Result<bool> {
+    let mut has_tag = false;
+    for attr in &field.attrs {
+        if attr.path().is_ident("serde_implicit") {
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident(TAG) {
+                    has_tag = true;
+                    Ok(())
+                } else {
+                    Err(Error::new_spanned(
+                        attr,
+                        "unknown attribute, expected `tag`",
+                    ))
+                }
+            })?;
+        }
+    }
+    Ok(has_tag)
+}
+
 fn parse_enum_variants(enum_variants: Punctuated<syn::Variant, Comma>) -> syn::Result<Style> {
     let mut variants = vec![];
 
     for v in enum_variants {
         let variant = match v.fields {
             syn::Fields::Named(_) => return Err(Error::new_spanned(v, "blah")),
-            syn::Fields::Unnamed(fields_unnamed) => TupleVariant {
-                ident: v.ident,
-                fields: fields_unnamed,
+            syn::Fields::Unnamed(fields_unnamed) => {
+                // Find which field has the tag attribute
+                let mut tag_index = None;
+
+                for (i, field) in fields_unnamed.unnamed.iter().enumerate() {
+                    if has_tag_attribute(field)? {
+                        if tag_index.is_some() {
+                            return Err(Error::new_spanned(
+                                field,
+                                "duplicate `#[serde_implicit(tag)]` annotations found, only one field can be tagged",
+                            ));
+                        }
+                        tag_index = Some(i);
+                    }
+                }
+
+                TupleVariant {
+                    ident: v.ident,
+                    fields: fields_unnamed,
+                    tag_index: tag_index.unwrap_or(0), // Default to position 0
+                }
             },
             syn::Fields::Unit => return Err(Error::new_spanned(v, "blah")),
         };
