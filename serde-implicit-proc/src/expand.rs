@@ -111,7 +111,7 @@ pub fn generate_variant_enum(
 
         let variant = format_ident!("__variant{}", i);
         quote! {
-            #byte_tokens => ::std::result::Result(__Variant::#variant),
+            #byte_tokens => ::std::result::Result::Ok(__Variant::#variant),
         }
     });
 
@@ -153,8 +153,8 @@ pub fn generate_variant_enum(
             {
                 match __value {
                     #(#visit_str_arms)*
-                    _ => __E::missing_field("omg"),
-                    // _ => ::std::result::Result(__Variant::__ignore),
+                    _ => ::std::result::Result::Err(__E::missing_field("omg")),
+                    // _ => ::std::result::Result::Ok(__Variant::__ignore),
                 }
             }
 
@@ -167,8 +167,8 @@ pub fn generate_variant_enum(
             {
                 match __value {
                     #(#visit_bytes_arms)*
-                    _ => __E::missing_field("omg"),
-                    // _ => ::std::result::Result(__Variant::__ignore),
+                    _ => ::std::result::Result::Err(__E::missing_field("omg")),
+                    // _ => ::std::result::Result::Ok(__Variant::__ignore),
                 }
             }
         }
@@ -212,14 +212,14 @@ fn deserialize_fields(fields: &ast::Fields) -> TokenStream {
         let variant = format_ident!("__field{}", i);
 
         visit_str_arms.push(quote! {
-            #field_name => ::std::result::Result(__Field::#variant),
+            #field_name => ::std::result::Result::Ok(__Field::#variant),
         });
 
         let byte_string = format!("b\"{}\"", field_name);
         let byte_tokens = Literal::byte_string(&byte_string.as_bytes());
 
         visit_bytes_arms.push(quote! {
-            #byte_tokens => ::std::result::Result(__Field::#variant),
+            #byte_tokens => ::std::result::Result::Ok(__Field::#variant),
         });
     }
 
@@ -256,7 +256,7 @@ fn deserialize_fields(fields: &ast::Fields) -> TokenStream {
             {
                 match __value {
                     #(#visit_str_arms)*
-                    _ => ::std::result::Result(__Field::__ignore),
+                    _ => ::std::result::Result::Ok(__Field::__ignore),
                 }
             }
 
@@ -269,7 +269,7 @@ fn deserialize_fields(fields: &ast::Fields) -> TokenStream {
             {
                 match __value {
                     #(#visit_bytes_arms)*
-                    _ => ::std::result::Result(__Field::__ignore),
+                    _ => ::std::result::Result::Ok(__Field::__ignore),
                 }
             }
         }
@@ -349,7 +349,7 @@ fn implement_variant_deserializer(
             let #field_var = match #field_var {
                 ::std::option::Option::Some(#field_var) => #field_var,
                 ::std::option::Option::None => {
-                    <__A::Error as serde::de::Error>::missing_field(#field_name)?
+                    return ::std::result::Result::Err(<__A::Error as serde::de::Error>::missing_field(#field_name));
                 }
             };
         });
@@ -410,7 +410,7 @@ fn implement_variant_deserializer(
 
                 #(#final_fields)*
 
-                ::std::result::Result(#struct_init)
+                ::std::result::Result::Ok(#struct_init)
             }
         }
 

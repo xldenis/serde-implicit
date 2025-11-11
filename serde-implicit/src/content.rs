@@ -65,7 +65,7 @@ impl<'de> Content<'de> {
     }
 
     #[cold]
-    fn unexpected(&self) -> Unexpected {
+    fn unexpected(&self) -> Unexpected<'_> {
         match *self {
             Content::Bool(b) => Unexpected::Bool(b),
             Content::U8(n) => Unexpected::Unsigned(n as u64),

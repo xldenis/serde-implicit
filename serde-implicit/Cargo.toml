@@ -9,10 +9,10 @@ description = "the serde(untagged) you wish you had"
 
 [dependencies]
 serde-implicit-proc = { version = "0.1", path = "../serde-implicit-proc" }
-serde = { version = "1.0.220", features = ["derive"] }
+serde = { version = "=1.0.227", features = ["derive"] }
 
 [dev-dependencies]
 serde_json = "1.0.140"
-trybuild = "1.0.105"
+trybuild = "1.0.114"
 proptest = "1.6.0"
 proptest-derive = "0.5.1"
