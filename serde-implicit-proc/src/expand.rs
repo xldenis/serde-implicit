@@ -63,7 +63,7 @@ pub fn expand_derive_serialize(input: syn::DeriveInput) -> syn::Result<proc_macr
                 let (__tag, __content) = serde::Deserializer::deserialize_any(
                     __deserializer,
                     serde_implicit::__private::TaggedContentVisitor::<__Variant>::new(#this_type_str, #fallthrough))?;
-                let __deserializer = serde::__private::de::ContentDeserializer::<__D::Error>::new(__content);
+                let __deserializer = serde_implicit::__private::ContentDeserializer::<__D::Error>::new(__content);
 
                 match __tag {
                     #(#variant_arms)*
@@ -97,7 +97,7 @@ pub fn generate_variant_enum(
 
         let variant = format_ident!("__variant{}", i);
         quote! {
-            #tag_value => serde::__private::Ok(__Variant::#variant),
+            #tag_value => ::std::result::Result::Ok(__Variant::#variant),
         }
     });
 
@@ -111,7 +111,7 @@ pub fn generate_variant_enum(
 
         let variant = format_ident!("__variant{}", i);
         quote! {
-            #byte_tokens => serde::__private::Ok(__Variant::#variant),
+            #byte_tokens => ::std::result::Result(__Variant::#variant),
         }
     });
 
@@ -136,9 +136,9 @@ pub fn generate_variant_enum(
 
             fn expecting(
                 &self,
-                __formatter: &mut serde::__private::Formatter,
-            ) -> serde::__private::fmt::Result {
-                serde::__private::Formatter::write_str(
+                __formatter: &mut ::std::fmt::Formatter,
+            ) -> ::std::fmt::Result {
+                ::std::fmt::Formatter::write_str(
                     __formatter,
                     "variant tag identifier",
                 )
@@ -147,28 +147,28 @@ pub fn generate_variant_enum(
             fn visit_str<__E>(
                 self,
                 __value: &str,
-            ) -> serde::__private::Result<Self::Value, __E>
+            ) -> ::std::result::Result<Self::Value, __E>
             where
                 __E: serde::de::Error,
             {
                 match __value {
                     #(#visit_str_arms)*
-                    _ => serde::__private::de::missing_field("omg"),
-                    // _ => serde::__private::Ok(__Variant::__ignore),
+                    _ => __E::missing_field("omg"),
+                    // _ => ::std::result::Result(__Variant::__ignore),
                 }
             }
 
             fn visit_bytes<__E>(
                 self,
                 __value: &[u8],
-            ) -> serde::__private::Result<Self::Value, __E>
+            ) -> ::std::result::Result<Self::Value, __E>
             where
                 __E: serde::de::Error,
             {
                 match __value {
                     #(#visit_bytes_arms)*
-                    _ => serde::__private::de::missing_field("omg"),
-                    // _ => serde::__private::Ok(__Variant::__ignore),
+                    _ => __E::missing_field("omg"),
+                    // _ => ::std::result::Result(__Variant::__ignore),
                 }
             }
         }
@@ -178,7 +178,7 @@ pub fn generate_variant_enum(
             #[inline]
             fn deserialize<__D>(
                 __deserializer: __D,
-            ) -> serde::__private::Result<Self, __D::Error>
+            ) -> ::std::result::Result<Self, __D::Error>
             where
                 __D: serde::Deserializer<'de>,
             {
@@ -212,14 +212,14 @@ fn deserialize_fields(fields: &ast::Fields) -> TokenStream {
         let variant = format_ident!("__field{}", i);
 
         visit_str_arms.push(quote! {
-            #field_name => serde::__private::Ok(__Field::#variant),
+            #field_name => ::std::result::Result(__Field::#variant),
         });
 
         let byte_string = format!("b\"{}\"", field_name);
         let byte_tokens = Literal::byte_string(&byte_string.as_bytes());
 
         visit_bytes_arms.push(quote! {
-            #byte_tokens => serde::__private::Ok(__Field::#variant),
+            #byte_tokens => ::std::result::Result(__Field::#variant),
         });
     }
 
@@ -239,9 +239,9 @@ fn deserialize_fields(fields: &ast::Fields) -> TokenStream {
 
             fn expecting(
                 &self,
-                __formatter: &mut serde::__private::Formatter,
-            ) -> serde::__private::fmt::Result {
-                serde::__private::Formatter::write_str(
+                __formatter: &mut ::std::fmt::Formatter,
+            ) -> ::std::fmt::Result {
+                ::std::fmt::Formatter::write_str(
                     __formatter,
                     "field identifier",
                 )
@@ -250,26 +250,26 @@ fn deserialize_fields(fields: &ast::Fields) -> TokenStream {
             fn visit_str<__E>(
                 self,
                 __value: &str,
-            ) -> serde::__private::Result<Self::Value, __E>
+            ) -> ::std::result::Result<Self::Value, __E>
             where
                 __E: serde::de::Error,
             {
                 match __value {
                     #(#visit_str_arms)*
-                    _ => serde::__private::Ok(__Field::__ignore),
+                    _ => ::std::result::Result(__Field::__ignore),
                 }
             }
 
             fn visit_bytes<__E>(
                 self,
                 __value: &[u8],
-            ) -> serde::__private::Result<Self::Value, __E>
+            ) -> ::std::result::Result<Self::Value, __E>
             where
                 __E: serde::de::Error,
             {
                 match __value {
                     #(#visit_bytes_arms)*
-                    _ => serde::__private::Ok(__Field::__ignore),
+                    _ => ::std::result::Result(__Field::__ignore),
                 }
             }
         }
@@ -279,7 +279,7 @@ fn deserialize_fields(fields: &ast::Fields) -> TokenStream {
             #[inline]
             fn deserialize<__D>(
                 __deserializer: __D,
-            ) -> serde::__private::Result<Self, __D::Error>
+            ) -> ::std::result::Result<Self, __D::Error>
             where
                 __D: serde::Deserializer<'de>,
             {
@@ -329,17 +329,17 @@ fn implement_variant_deserializer(
         let field_enum_variant = format_ident!("__field{}", i);
 
         field_declarations.push(quote! {
-            let mut #field_var: serde::__private::Option<#field_type> = serde::__private::None;
+            let mut #field_var: ::std::option::Option<#field_type> = ::std::option::Option::None;
         });
 
         field_processing.push(quote! {
             __Field::#field_enum_variant => {
-                if serde::__private::Option::is_some(&#field_var) {
-                    return serde::__private::Err(
+                if ::std::option::Option::is_some(&#field_var) {
+                    return ::std::result::Result::Err(
                         <__A::Error as serde::de::Error>::duplicate_field(#field_name),
                     );
                 }
-                #field_var = serde::__private::Some(
+                #field_var = ::std::option::Option::Some(
                     serde::de::MapAccess::next_value::<#field_type>(&mut __map)?,
                 );
             }
@@ -347,9 +347,9 @@ fn implement_variant_deserializer(
 
         final_fields.push(quote! {
             let #field_var = match #field_var {
-                serde::__private::Some(#field_var) => #field_var,
-                serde::__private::None => {
-                    serde::__private::de::missing_field(#field_name)?
+                ::std::option::Option::Some(#field_var) => #field_var,
+                ::std::option::Option::None => {
+                    <__A::Error as serde::de::Error>::missing_field(#field_name)?
                 }
             };
         });
@@ -367,8 +367,8 @@ fn implement_variant_deserializer(
     quote! {
         #[doc(hidden)]
         struct __Visitor<'de, #ty_generics> {
-            marker: serde::__private::PhantomData<#enum_name < #ty_generics >>,
-            lifetime: serde::__private::PhantomData<&'de ()>,
+            marker: ::std::marker::PhantomData<#enum_name < #ty_generics >>,
+            lifetime: ::std::marker::PhantomData<&'de ()>,
         }
 
         #[automatically_derived]
@@ -377,9 +377,9 @@ fn implement_variant_deserializer(
 
             fn expecting(
                 &self,
-                __formatter: &mut serde::__private::Formatter,
-            ) -> serde::__private::fmt::Result {
-                serde::__private::Formatter::write_str(
+                __formatter: &mut ::std::fmt::Formatter,
+            ) -> ::std::fmt::Result {
+                ::std::fmt::Formatter::write_str(
                     __formatter,
                     #expecting_message,
                 )
@@ -389,13 +389,13 @@ fn implement_variant_deserializer(
             fn visit_map<__A>(
                 self,
                 mut __map: __A,
-            ) -> serde::__private::Result<Self::Value, __A::Error>
+            ) -> ::std::result::Result<Self::Value, __A::Error>
             where
                 __A: serde::de::MapAccess<'de>,
             {
                 #(#field_declarations)*
 
-                while let serde::__private::Some(__key) = serde::de::MapAccess::next_key::<
+                while let ::std::option::Option::Some(__key) = serde::de::MapAccess::next_key::<
                     __Field,
                 >(&mut __map)? {
                     match __key {
@@ -410,15 +410,15 @@ fn implement_variant_deserializer(
 
                 #(#final_fields)*
 
-                serde::__private::Ok(#struct_init)
+                ::std::result::Result(#struct_init)
             }
         }
 
         serde::Deserializer::deserialize_map(
             __deserializer,
             __Visitor {
-                marker: serde::__private::PhantomData::<#enum_name < #ty_generics > >,
-                lifetime: serde::__private::PhantomData,
+                marker: ::std::marker::PhantomData::<#enum_name < #ty_generics > >,
+                lifetime: ::std::marker::PhantomData,
             }
         )
 

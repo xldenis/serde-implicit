@@ -1,8 +1,10 @@
 use std::fmt;
 
-use serde::__private::de::{Content, ContentDeserializer};
+use crate::content::Content;
 use serde::de::{self, IntoDeserializer, MapAccess, Unexpected};
 use serde::{Deserialize, de::Visitor};
+
+pub use crate::content::ContentDeserializer;
 
 pub struct TaggedContentVisitor<T> {
     expecting: &'static str,
