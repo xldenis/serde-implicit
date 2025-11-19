@@ -65,9 +65,13 @@ pub fn expand_tuple_enum(
     ty_name: &Ident,
     variants: &[ast::TupleVariant],
 ) -> syn::Result<proc_macro2::TokenStream> {
+    // Separate variants into regular and flatten groups
+    let (regular_variants, flatten_variants): (Vec<_>, Vec<_>) = variants.iter().partition(|v| !v.has_flatten);
+
     let mut variant_trials = vec![];
 
-    for v in variants.iter() {
+    // Generate trials for regular (non-flatten) variants
+    for v in regular_variants.iter() {
         let variant_ident = &v.ident;
         let fields = &v.fields;
         let field_count = fields.unnamed.len();
@@ -165,6 +169,34 @@ pub fn expand_tuple_enum(
         variant_trials.push(trial);
     }
 
+    // Generate trials for flatten variants (tried only if no regular variant matched)
+    let mut flatten_trials = vec![];
+    for v in flatten_variants.iter() {
+        let variant_ident = &v.ident;
+        let fields = &v.fields;
+
+        // Flatten variants have exactly one field
+        let field = fields.unnamed.first().ok_or_else(|| {
+            syn::Error::new_spanned(
+                &v.ident,
+                "flatten variant must have exactly one field",
+            )
+        })?;
+        let field_type = &field.ty;
+
+        // Generate trial block for flatten variant
+        let trial = quote! {
+            // Try flatten variant #variant_ident
+            if let serde::__private::Ok(__field0) = <#field_type as serde::Deserialize>::deserialize(
+                serde::__private::de::ContentDeserializer::<__D::Error>::new(__content.clone())
+            ) {
+                return serde::__private::Ok(#ty_name::#variant_ident(__field0));
+            }
+        };
+
+        flatten_trials.push(trial);
+    }
+
     let expected_str = proc_macro2::Literal::string(&format!("a valid variant of {}", ty_name));
 
     Ok(quote! {
@@ -172,8 +204,11 @@ pub fn expand_tuple_enum(
             __deserializer,
         )?;
 
-        // Try each variant in order
+        // Try each regular variant in order
         #(#variant_trials)*
+
+        // If no regular variant matched, try flatten variants
+        #(#flatten_trials)*
 
         // No variant matched
         serde::__private::Err(serde::de::Error::custom(format!(

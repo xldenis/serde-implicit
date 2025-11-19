@@ -269,6 +269,105 @@ fn tuple_commit_semantics_verification() {
 }
 
 #[test]
+fn tuple_flatten_basic() {
+    // Test basic flatten functionality
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    struct A(String, bool);
+
+    #[derive(serde_implicit::Deserialize, Debug, PartialEq)]
+    enum Implicit {
+        Normal(bool),
+        Tagged(u64, #[serde_implicit(tag)] u32),
+        Nested(#[serde_implicit(flatten)] A),
+    }
+
+    // Should match Normal variant first
+    let res: Result<Implicit, _> = serde_json::from_value(json!([false]));
+    assert_eq!(res.unwrap(), Implicit::Normal(false));
+
+    // Should match Tagged variant (tag at position 1)
+    let res: Result<Implicit, _> = serde_json::from_value(json!([42, 99]));
+    assert_eq!(res.unwrap(), Implicit::Tagged(42, 99));
+
+    // Should match Nested (flatten) variant as fallback
+    let res: Result<Implicit, _> = serde_json::from_value(json!(["hello", true]));
+    assert_eq!(res.unwrap(), Implicit::Nested(A("hello".to_string(), true)));
+}
+
+#[test]
+fn tuple_flatten_multiple() {
+    // Test multiple flatten variants tried sequentially
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    struct StringBool(String, bool);
+
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    struct StringU64(String, u64);
+
+    #[derive(serde_implicit::Deserialize, Debug, PartialEq)]
+    enum Multi {
+        Normal(bool),
+        Flatten1(#[serde_implicit(flatten)] StringBool),
+        Flatten2(#[serde_implicit(flatten)] StringU64),
+    }
+
+    // Should match Normal variant
+    let res: Result<Multi, _> = serde_json::from_value(json!([true]));
+    assert_eq!(res.unwrap(), Multi::Normal(true));
+
+    // Should match Flatten1 variant (String, bool)
+    let res: Result<Multi, _> = serde_json::from_value(json!(["test", false]));
+    assert_eq!(res.unwrap(), Multi::Flatten1(StringBool("test".to_string(), false)));
+
+    // Should match Flatten2 variant (String, u64)
+    let res: Result<Multi, _> = serde_json::from_value(json!(["test", 42]));
+    assert_eq!(res.unwrap(), Multi::Flatten2(StringU64("test".to_string(), 42)));
+}
+
+#[test]
+fn tuple_flatten_fallback_only() {
+    // Test that flatten variants are only tried after all regular variants fail
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    struct Fallback(String, String);
+
+    #[derive(serde_implicit::Deserialize, Debug, PartialEq)]
+    enum TestEnum {
+        First(bool),
+        Second(u64),
+        Fall(#[serde_implicit(flatten)] Fallback),
+    }
+
+    // Regular variants should be tried first
+    let res: Result<TestEnum, _> = serde_json::from_value(json!([true]));
+    assert_eq!(res.unwrap(), TestEnum::First(true));
+
+    let res: Result<TestEnum, _> = serde_json::from_value(json!([123]));
+    assert_eq!(res.unwrap(), TestEnum::Second(123));
+
+    // Flatten variant is only tried when others fail
+    let res: Result<TestEnum, _> = serde_json::from_value(json!(["foo", "bar"]));
+    assert_eq!(res.unwrap(), TestEnum::Fall(Fallback("foo".to_string(), "bar".to_string())));
+}
+
+#[test]
+fn tuple_flatten_no_match() {
+    // Test error when no variant matches
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    struct OnlyBools(bool, bool);
+
+    #[derive(serde_implicit::Deserialize, Debug, PartialEq)]
+    enum TestEnum {
+        First(u64),
+        Second(#[serde_implicit(flatten)] OnlyBools),
+    }
+
+    // Should fail because it's not a u64 and not two bools
+    let res: Result<TestEnum, _> = serde_json::from_value(json!(["string", "string"]));
+    assert!(res.is_err());
+    let err = res.unwrap_err();
+    assert!(err.to_string().contains("data did not match any variant"));
+}
+
+#[test]
 fn ui() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");

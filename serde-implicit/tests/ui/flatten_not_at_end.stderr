@@ -1,0 +1,5 @@
+error: flatten variants must appear after all non-flatten variants in the enum definition
+ --> tests/ui/flatten_not_at_end.rs:7:5
+  |
+7 |     Normal(bool),
+  |     ^^^^^^
