@@ -66,7 +66,8 @@ pub fn expand_tuple_enum(
     variants: &[ast::TupleVariant],
 ) -> syn::Result<proc_macro2::TokenStream> {
     // Separate variants into regular and flatten groups
-    let (regular_variants, flatten_variants): (Vec<_>, Vec<_>) = variants.iter().partition(|v| !v.has_flatten);
+    let (regular_variants, flatten_variants): (Vec<_>, Vec<_>) =
+        variants.iter().partition(|v| !v.has_flatten);
 
     let mut variant_trials = vec![];
 
@@ -77,53 +78,15 @@ pub fn expand_tuple_enum(
         let field_count = fields.unnamed.len();
         let tag_index = v.tag_index;
 
-        // Get the tag field type
-        let tag_field = fields.unnamed.iter().nth(tag_index).ok_or_else(|| {
-            syn::Error::new_spanned(
-                &v.ident,
-                format!("tag_index {} out of bounds for variant with {} fields", tag_index, field_count),
-            )
-        })?;
+        let tag_field = fields
+            .unnamed
+            .iter()
+            .nth(tag_index)
+            .expect("tag index must be smaller than variant's field count");
+
         let tag_type = &tag_field.ty;
 
-        // Generate field names for all fields except the tag
-        let field_constructions: Vec<_> = (0..field_count)
-            .map(|i| {
-                if i == tag_index {
-                    (i, quote! { __tag }, true)
-                } else {
-                    let adjusted_i = if i > tag_index { i - 1 } else { i };
-                    let field_name = format_ident!("__field{}", adjusted_i);
-                    (i, quote! { #field_name }, false)
-                }
-            })
-            .collect();
-
-        // Generate deserialization for non-tag fields with error propagation (commit on tag match)
-        let field_deserializations: Vec<_> = fields.unnamed.iter().enumerate()
-            .filter(|(i, _)| *i != tag_index)
-            .map(|(i, field)| {
-                let field_type = &field.ty;
-                let seq_index = proc_macro2::Literal::usize_unsuffixed(i);
-                let adjusted_i = if i > tag_index { i - 1 } else { i };
-                let field_name = format_ident!("__field{}", adjusted_i);
-
-                quote! {
-                    let #field_name = <#field_type as serde::Deserialize>::deserialize(
-                        serde::__private::de::ContentRefDeserializer::<__D::Error>::new(&__seq[#seq_index])
-                    )?;
-                }
-            })
-            .collect();
-
-        // Collect field construction values
-        let field_construction_values: Vec<_> = field_constructions.iter().map(|(_, val, _)| val).collect();
-        let tag_index_lit = proc_macro2::Literal::usize_unsuffixed(tag_index);
-        let field_count_lit = proc_macro2::Literal::usize_unsuffixed(field_count);
-
-        // Generate trial block for this variant
-        let trial = if field_count == 1 && tag_index == 0 {
-            // Special case: single-field variant with tag at position 0
+        let trial = if field_count == 1 {
             quote! {
                 // Try variant #variant_ident (single field)
                 if let serde::__private::de::Content::Seq(ref __seq) = __content {
@@ -146,20 +109,47 @@ pub fn expand_tuple_enum(
                 }
             }
         } else {
-            // Multi-field variant
+            let field_names: Vec<_> = (0..field_count)
+                .map(|i| {
+                    if i == tag_index {
+                        quote! { __tag }
+                    } else {
+                        let adjusted_i = if i > tag_index { i - 1 } else { i };
+                        let field_name = format_ident!("__field{}", adjusted_i);
+                        quote! { #field_name }
+                    }
+                })
+                .collect();
+
+            let field_deserializations: Vec<_> = fields.unnamed.iter().enumerate()
+            .filter(|(i, _)| *i != tag_index)
+            .map(|(i, field)| {
+                let field_type = &field.ty;
+                let seq_index = proc_macro2::Literal::usize_unsuffixed(i);
+                let adjusted_i = if i > tag_index { i - 1 } else { i };
+                let field_name = format_ident!("__field{}", adjusted_i);
+
+                quote! {
+                    let #field_name = <#field_type as serde::Deserialize>::deserialize(
+                        serde::__private::de::ContentRefDeserializer::<__D::Error>::new(&__seq[#seq_index])
+                    )?;
+                }
+            })
+            .collect();
+
+            let tag_index_lit = proc_macro2::Literal::usize_unsuffixed(tag_index);
+            let field_count_lit = proc_macro2::Literal::usize_unsuffixed(field_count);
+
             quote! {
-                // Try variant #variant_ident with tag at position #tag_index
                 if let serde::__private::de::Content::Seq(ref __seq) = __content {
                     if __seq.len() == #field_count_lit {
-                        // Try to deserialize tag at index #tag_index
                         if let serde::__private::Ok(__tag) = <#tag_type as serde::Deserialize>::deserialize(
                             serde::__private::de::ContentRefDeserializer::<__D::Error>::new(&__seq[#tag_index_lit])
                         ) {
-                            // Tag matched - committed to this variant
-                            // Deserialize remaining fields (errors propagate with ?)
+
                             #(#field_deserializations)*
 
-                            return serde::__private::Ok(#ty_name::#variant_ident(#(#field_construction_values),*));
+                            return serde::__private::Ok(#ty_name::#variant_ident(#(#field_names),*));
                         }
                     }
                 }
@@ -177,16 +167,11 @@ pub fn expand_tuple_enum(
 
         // Flatten variants have exactly one field
         let field = fields.unnamed.first().ok_or_else(|| {
-            syn::Error::new_spanned(
-                &v.ident,
-                "flatten variant must have exactly one field",
-            )
+            syn::Error::new_spanned(&v.ident, "flatten variant must have exactly one field")
         })?;
         let field_type = &field.ty;
 
-        // Generate trial block for flatten variant
         let trial = quote! {
-            // Try flatten variant #variant_ident
             if let serde::__private::Ok(__field0) = <#field_type as serde::Deserialize>::deserialize(
                 serde::__private::de::ContentDeserializer::<__D::Error>::new(__content.clone())
             ) {

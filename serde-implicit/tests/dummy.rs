@@ -316,11 +316,17 @@ fn tuple_flatten_multiple() {
 
     // Should match Flatten1 variant (String, bool)
     let res: Result<Multi, _> = serde_json::from_value(json!(["test", false]));
-    assert_eq!(res.unwrap(), Multi::Flatten1(StringBool("test".to_string(), false)));
+    assert_eq!(
+        res.unwrap(),
+        Multi::Flatten1(StringBool("test".to_string(), false))
+    );
 
     // Should match Flatten2 variant (String, u64)
     let res: Result<Multi, _> = serde_json::from_value(json!(["test", 42]));
-    assert_eq!(res.unwrap(), Multi::Flatten2(StringU64("test".to_string(), 42)));
+    assert_eq!(
+        res.unwrap(),
+        Multi::Flatten2(StringU64("test".to_string(), 42))
+    );
 }
 
 #[test]
@@ -345,7 +351,10 @@ fn tuple_flatten_fallback_only() {
 
     // Flatten variant is only tried when others fail
     let res: Result<TestEnum, _> = serde_json::from_value(json!(["foo", "bar"]));
-    assert_eq!(res.unwrap(), TestEnum::Fall(Fallback("foo".to_string(), "bar".to_string())));
+    assert_eq!(
+        res.unwrap(),
+        TestEnum::Fall(Fallback("foo".to_string(), "bar".to_string()))
+    );
 }
 
 #[test]
@@ -387,3 +396,27 @@ fn ui() {
 // - extra fields
 // - missing fields
 // - recursive type
+
+#[test]
+fn test_readme_tuples() {
+    #[derive(serde_implicit::Deserialize, Debug)]
+    enum Message {
+        Literal(u64),
+        BigOp(Op, Vec<Message>),
+    }
+
+    #[derive(serde::Deserialize, Debug)]
+    enum Op {
+        Sum,
+    }
+
+    let res: Result<Op, _> = serde_json::from_value(json!("Sum"));
+    res.unwrap();
+
+    // Should fail because it's not a u64 and not two bools
+    let res: Result<Message, _> = serde_json::from_value(json!(["Sum", 1]));
+    assert!(res.is_err());
+    let err = res.unwrap_err();
+    println!("{err:?}");
+    assert!(err.to_string().contains("integer `1`, expected a sequence"));
+}
