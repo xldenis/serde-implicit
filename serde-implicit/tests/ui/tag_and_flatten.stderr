@@ -1,0 +1,5 @@
+error: field cannot have both `#[serde_implicit(tag)]` and `#[serde_implicit(flatten)]`
+ --> tests/ui/tag_and_flatten.rs:7:17
+  |
+7 |     Conflicting(#[serde_implicit(tag, flatten)] Helper),
+  |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

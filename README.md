@@ -5,7 +5,7 @@
 When building api types in Rust it is common to see serde's *untagged* enum representation get used to provide a more 'ergonomic' or 'aesthetic' API surface.
 
 ```rust
-#[derive(Deserialize, Serialize)]
+#[derive(serde_implicit::Deserialize, Serialize)]
 #[serde(untagged)]
 enum Message {
 	// { "content": "i love serializing", "sender": "xldenis", "timestamp": 123 }
@@ -32,4 +32,36 @@ Even when your enum types have completely disjoint fields, serde will blindly at
 { "content": "oops i mislabeled my field", "username": "xldenis", "timestamp": 1234 }
 
 "missing field `sender`"
+```
+
+## Tuple variant support
+
+`serde-implicit` also provides support for tuple variants, allowing you to use a specific field position as the tag of the enum. Variants are scanned top-down, checking only the tag fields at first. As soon as a tag is matched, that variant is *locked in* and the complete set of fields is then parsed. This allows providing better error messages than *untagged* enums like them comes with several tradeoffs. In particular `serde-implicit` is not able to provide the same level of overlap-checking that is achievable with struct enums, meaning it is possible to have unreachable variants.
+
+**note:** tuple enums are *only* parsed as sequences `[field1, field2, field3]`, serde-json's object-syntax for tuples is not supported.
+
+```rust
+#[derive(serde_implicit::Deserialize, Serialize)]
+#[serde(untagged)]
+enum Message {
+    Literal(u64),
+    BigOp(Op, Vec<Message>),
+}
+
+#[derive(serde::Deserialize, Debug)]
+enum Op {
+    Sum,
+}
+```
+
+With `serde`, and `untagged` if you tried to parse the message `["Sum", 1]` you would get the following error:
+
+```
+data did not match any variant of untagged enum Message
+```
+
+With `serde-implicit`, you would get:
+
+```
+invalid type: integer `1`, expected a sequence
 ```

@@ -1,5 +1,7 @@
+use arbitrary_json::ArbitraryValue;
 use proptest::prelude::*;
 use proptest::proptest;
+use proptest_arbitrary_interop::arb;
 use proptest_derive::Arbitrary;
 
 #[derive(serde_implicit_proc::Deserialize, serde::Serialize, Debug, PartialEq, Arbitrary)]
@@ -90,6 +92,40 @@ mod edge_cases {
     }
 }
 
+/// Basic tuple enum - discriminated by first field type
+#[derive(serde_implicit::Deserialize, serde::Serialize, Debug, PartialEq, Arbitrary)]
+#[serde(untagged)]
+enum TupleEnum {
+    BoolU32(bool, u32),
+    StringOnly(String),
+    U64Vec(u64, Vec<u32>),
+}
+
+/// Tuple enum with custom tag positions via #[serde_implicit(tag)]
+#[derive(serde_implicit::Deserialize, serde::Serialize, Debug, PartialEq, Arbitrary)]
+#[serde(untagged)]
+enum TupleCustomTag {
+    /// Tag at position 1
+    MiddleTag(bool, #[serde_implicit(tag)] String, u32),
+    /// Tag at position 0 (explicit)
+    FirstTag(#[serde_implicit(tag)] u64, bool),
+    /// Tag at last position
+    LastTag(u32, bool, #[serde_implicit(tag)] String),
+}
+
+/// Helper struct for flatten tests
+#[derive(serde::Deserialize, serde::Serialize, Debug, PartialEq, Arbitrary)]
+struct FlattenInner(String, bool);
+
+/// Tuple enum with flatten for fallback variants
+#[derive(serde_implicit::Deserialize, serde::Serialize, Debug, PartialEq, Arbitrary)]
+#[serde(untagged)]
+enum TupleFlatten {
+    Normal(bool),
+    Tagged(u64, #[serde_implicit(tag)] u32),
+    Fallback(#[serde_implicit(flatten)] FlattenInner),
+}
+
 proptest! {
     #[test]
     fn test_tags_different_types(tag in any::<MultiTypeTag>()) {
@@ -139,5 +175,58 @@ proptest! {
         let deserialized2  : SerdeMultiTypeTag = serde_json::from_str(&serialized).unwrap();
 
         assert_eq!(serde_json::to_string(&deserialized1).unwrap(), serde_json::to_string(&deserialized2).unwrap());
+    }
+
+    /// Fuzz test: arbitrary JSON should never cause a panic during deserialization.
+    /// We don't care if it returns Ok or Err, just that it terminates cleanly.
+    #[test]
+    fn fuzz_multi_type_tag_no_panic(json in arb::<ArbitraryValue>()) {
+        let _ = serde_json::from_value::<MultiTypeTag>(json.into());
+    }
+
+    #[test]
+    fn fuzz_overlapping_fields_no_panic(json in arb::<ArbitraryValue>()) {
+        let _ = serde_json::from_value::<OverlappingFields>(json.into());
+    }
+
+    #[test]
+    fn fuzz_nested_enum_no_panic(json in arb::<ArbitraryValue>()) {
+        let _ = serde_json::from_value::<NestedEnum>(json.into());
+    }
+
+    #[test]
+    fn fuzz_tuple_enum_no_panic(json in arb::<ArbitraryValue>()) {
+        let _ = serde_json::from_value::<TupleEnum>(json.into());
+    }
+
+    #[test]
+    fn fuzz_tuple_custom_tag_no_panic(json in arb::<ArbitraryValue>()) {
+        let _ = serde_json::from_value::<TupleCustomTag>(json.into());
+    }
+
+    #[test]
+    fn fuzz_tuple_flatten_no_panic(json in arb::<ArbitraryValue>()) {
+        let _ = serde_json::from_value::<TupleFlatten>(json.into());
+    }
+
+    #[test]
+    fn test_tuple_enum_roundtrip(value in any::<TupleEnum>()) {
+        let serialized = serde_json::to_value(&value).unwrap();
+        let deserialized: TupleEnum = serde_json::from_value(serialized).unwrap();
+        assert_eq!(value, deserialized);
+    }
+
+    #[test]
+    fn test_tuple_custom_tag_roundtrip(value in any::<TupleCustomTag>()) {
+        let serialized = serde_json::to_value(&value).unwrap();
+        let deserialized: TupleCustomTag = serde_json::from_value(serialized).unwrap();
+        assert_eq!(value, deserialized);
+    }
+
+    #[test]
+    fn test_tuple_flatten_roundtrip(value in any::<TupleFlatten>()) {
+        let serialized = serde_json::to_value(&value).unwrap();
+        let deserialized: TupleFlatten = serde_json::from_value(serialized).unwrap();
+        assert_eq!(value, deserialized);
     }
 }
