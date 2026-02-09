@@ -144,6 +144,51 @@ macro_rules! tri {
     };
 }
 
+macro_rules! map_key_integer_method {
+    (owned $name:ident, $visit:ident, $ty:ty) => {
+        fn $name<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: Visitor<'de>,
+        {
+            match self.content {
+                Content::String(ref s) => {
+                    if let Ok(v) = s.parse::<$ty>() {
+                        return visitor.$visit(v);
+                    }
+                }
+                Content::Str(s) => {
+                    if let Ok(v) = s.parse::<$ty>() {
+                        return visitor.$visit(v);
+                    }
+                }
+                _ => {}
+            }
+            ContentDeserializer::new(self.content).deserialize_integer(visitor)
+        }
+    };
+    (ref $name:ident, $visit:ident, $ty:ty) => {
+        fn $name<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+        where
+            V: Visitor<'de>,
+        {
+            match *self.content {
+                Content::String(ref s) => {
+                    if let Ok(v) = s.parse::<$ty>() {
+                        return visitor.$visit(v);
+                    }
+                }
+                Content::Str(s) => {
+                    if let Ok(v) = s.parse::<$ty>() {
+                        return visitor.$visit(v);
+                    }
+                }
+                _ => {}
+            }
+            ContentRefDeserializer::new(self.content).deserialize_integer(visitor)
+        }
+    };
+}
+
 impl<'de> Visitor<'de> for ContentVisitor<'de> {
     type Value = Content<'de>;
 
@@ -926,7 +971,8 @@ where
     V: Visitor<'de>,
     E: de::Error,
 {
-    let mut map_visitor = MapDeserializer::new(content.into_iter());
+    let mut map_visitor =
+        MapDeserializer::new(content.into_iter().map(|(k, v)| (MapKeyContent(k), v)));
     let value = tri!(visitor.visit_map(&mut map_visitor));
     tri!(map_visitor.end());
     Ok(value)
@@ -1306,6 +1352,56 @@ impl<'de, E> ContentDeserializer<'de, E> {
     }
 }
 
+struct MapKeyContent<'de>(Content<'de>);
+
+impl<'de, E> de::IntoDeserializer<'de, E> for MapKeyContent<'de>
+where
+    E: de::Error,
+{
+    type Deserializer = ContentMapKeyDeserializer<'de, E>;
+
+    fn into_deserializer(self) -> Self::Deserializer {
+        ContentMapKeyDeserializer {
+            content: self.0,
+            err: PhantomData,
+        }
+    }
+}
+
+struct ContentMapKeyDeserializer<'de, E> {
+    content: Content<'de>,
+    err: PhantomData<E>,
+}
+
+impl<'de, E> Deserializer<'de> for ContentMapKeyDeserializer<'de, E>
+where
+    E: de::Error,
+{
+    type Error = E;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        ContentDeserializer::new(self.content).deserialize_any(visitor)
+    }
+
+    map_key_integer_method!(owned deserialize_i8, visit_i8, i8);
+    map_key_integer_method!(owned deserialize_i16, visit_i16, i16);
+    map_key_integer_method!(owned deserialize_i32, visit_i32, i32);
+    map_key_integer_method!(owned deserialize_i64, visit_i64, i64);
+    map_key_integer_method!(owned deserialize_u8, visit_u8, u8);
+    map_key_integer_method!(owned deserialize_u16, visit_u16, u16);
+    map_key_integer_method!(owned deserialize_u32, visit_u32, u32);
+    map_key_integer_method!(owned deserialize_u64, visit_u64, u64);
+
+    serde::forward_to_deserialize_any! {
+        bool f32 f64 char str string bytes byte_buf option unit unit_struct
+        newtype_struct seq tuple tuple_struct map struct enum identifier
+        ignored_any
+    }
+}
+
 pub struct EnumDeserializer<'de, E>
 where
     E: de::Error,
@@ -1502,13 +1598,9 @@ where
     V: Visitor<'de>,
     E: de::Error,
 {
-    fn content_ref_deserializer_pair<'a, 'de>(
-        (k, v): &'a (Content<'de>, Content<'de>),
-    ) -> (&'a Content<'de>, &'a Content<'de>) {
-        (k, v)
-    }
-
-    let map = content.iter().map(content_ref_deserializer_pair);
+    let map = content
+        .iter()
+        .map(|(k, v)| (MapKeyContentRef(k), &*v));
     let mut map_visitor = MapDeserializer::new(map);
     let value = tri!(visitor.visit_map(&mut map_visitor));
     tri!(map_visitor.end());
@@ -1888,6 +1980,64 @@ impl<'a, 'de: 'a, E> Copy for ContentRefDeserializer<'a, 'de, E> {}
 impl<'a, 'de: 'a, E> Clone for ContentRefDeserializer<'a, 'de, E> {
     fn clone(&self) -> Self {
         *self
+    }
+}
+
+struct MapKeyContentRef<'a, 'de: 'a>(&'a Content<'de>);
+
+impl<'a, 'de, E> de::IntoDeserializer<'de, E> for MapKeyContentRef<'a, 'de>
+where
+    E: de::Error,
+{
+    type Deserializer = ContentRefMapKeyDeserializer<'a, 'de, E>;
+
+    fn into_deserializer(self) -> Self::Deserializer {
+        ContentRefMapKeyDeserializer {
+            content: self.0,
+            err: PhantomData,
+        }
+    }
+}
+
+struct ContentRefMapKeyDeserializer<'a, 'de: 'a, E> {
+    content: &'a Content<'de>,
+    err: PhantomData<E>,
+}
+
+impl<'a, 'de: 'a, E> Copy for ContentRefMapKeyDeserializer<'a, 'de, E> {}
+
+impl<'a, 'de: 'a, E> Clone for ContentRefMapKeyDeserializer<'a, 'de, E> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'de, 'a, E> Deserializer<'de> for ContentRefMapKeyDeserializer<'a, 'de, E>
+where
+    E: de::Error,
+{
+    type Error = E;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        ContentRefDeserializer::new(self.content).deserialize_any(visitor)
+    }
+
+    map_key_integer_method!(ref deserialize_i8, visit_i8, i8);
+    map_key_integer_method!(ref deserialize_i16, visit_i16, i16);
+    map_key_integer_method!(ref deserialize_i32, visit_i32, i32);
+    map_key_integer_method!(ref deserialize_i64, visit_i64, i64);
+    map_key_integer_method!(ref deserialize_u8, visit_u8, u8);
+    map_key_integer_method!(ref deserialize_u16, visit_u16, u16);
+    map_key_integer_method!(ref deserialize_u32, visit_u32, u32);
+    map_key_integer_method!(ref deserialize_u64, visit_u64, u64);
+
+    serde::forward_to_deserialize_any! {
+        bool f32 f64 char str string bytes byte_buf option unit unit_struct
+        newtype_struct seq tuple tuple_struct map struct enum identifier
+        ignored_any
     }
 }
 

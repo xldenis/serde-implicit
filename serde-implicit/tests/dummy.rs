@@ -382,6 +382,32 @@ fn ui() {
     t.compile_fail("tests/ui/*.rs");
 }
 
+#[test]
+fn test_string_key_map_to_integer_key() {
+    use std::collections::HashMap;
+
+    #[derive(serde_implicit_proc::Deserialize, Debug)]
+    enum WithMap {
+        Variant {
+            #[serde_implicit(tag)]
+            tag: String,
+            data: HashMap<u32, String>,
+        },
+    }
+
+    let res: Result<WithMap, _> = serde_json::from_value(
+        json!({"tag": "hello", "data": {"0": "zero", "1": "one"}}),
+    );
+    let val = res.unwrap();
+    match val {
+        WithMap::Variant { data, .. } => {
+            assert_eq!(data.len(), 2);
+            assert_eq!(data[&0], "zero");
+            assert_eq!(data[&1], "one");
+        }
+    }
+}
+
 // musings on test coverage
 
 // properties: parsing with implicit tagged <-> untagged
