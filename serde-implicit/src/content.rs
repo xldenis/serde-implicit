@@ -1395,9 +1395,26 @@ where
     map_key_integer_method!(owned deserialize_u32, visit_u32, u32);
     map_key_integer_method!(owned deserialize_u64, visit_u64, u64);
 
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.content {
+            Content::Newtype(v) => visitor.visit_newtype_struct(ContentMapKeyDeserializer {
+                content: *v,
+                err: PhantomData,
+            }),
+            _ => visitor.visit_newtype_struct(self),
+        }
+    }
+
     serde::forward_to_deserialize_any! {
         bool f32 f64 char str string bytes byte_buf option unit unit_struct
-        newtype_struct seq tuple tuple_struct map struct enum identifier
+        seq tuple tuple_struct map struct enum identifier
         ignored_any
     }
 }
@@ -2034,9 +2051,26 @@ where
     map_key_integer_method!(ref deserialize_u32, visit_u32, u32);
     map_key_integer_method!(ref deserialize_u64, visit_u64, u64);
 
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match *self.content {
+            Content::Newtype(ref v) => visitor.visit_newtype_struct(ContentRefMapKeyDeserializer {
+                content: v,
+                err: PhantomData,
+            }),
+            _ => visitor.visit_newtype_struct(self),
+        }
+    }
+
     serde::forward_to_deserialize_any! {
         bool f32 f64 char str string bytes byte_buf option unit unit_struct
-        newtype_struct seq tuple tuple_struct map struct enum identifier
+        seq tuple tuple_struct map struct enum identifier
         ignored_any
     }
 }

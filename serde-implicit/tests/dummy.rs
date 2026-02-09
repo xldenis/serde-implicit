@@ -408,6 +408,35 @@ fn test_string_key_map_to_integer_key() {
     }
 }
 
+#[test]
+fn test_newtype_struct_map_key() {
+    use std::collections::HashMap;
+
+    #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct Id(u64);
+
+    #[derive(serde_implicit_proc::Deserialize, serde::Serialize, Debug)]
+    enum WithNewtypeKey {
+        Variant {
+            #[serde_implicit(tag)]
+            tag: String,
+            data: HashMap<Id, String>,
+        },
+    }
+
+    let res: Result<WithNewtypeKey, _> = serde_json::from_value(
+        json!({"tag": "hello", "data": {"0": "zero", "42": "forty-two"}}),
+    );
+    let val = res.unwrap();
+    match val {
+        WithNewtypeKey::Variant { data, .. } => {
+            assert_eq!(data.len(), 2);
+            assert_eq!(data[&Id(0)], "zero");
+            assert_eq!(data[&Id(42)], "forty-two");
+        }
+    }
+}
+
 // musings on test coverage
 
 // properties: parsing with implicit tagged <-> untagged
