@@ -477,3 +477,36 @@ fn test_readme_tuples() {
             .contains("Message::BigOp: invalid type: integer `1`, expected a sequence")
     );
 }
+
+/// Regression test: missing `Option<T>` fields in struct variants should
+/// deserialize as `None`, matching standard serde behaviour.
+#[test]
+fn test_missing_option_field_defaults_to_none() {
+    #[allow(dead_code)]
+    #[derive(serde_implicit_proc::Deserialize, Debug)]
+    enum Config {
+        V0 {
+            #[serde_implicit(tag)]
+            settings: String,
+            dist_metric: String,
+            dimensions: Option<u32>,
+        },
+        V1 {
+            #[serde_implicit(tag)]
+            indexes: Vec<String>,
+            kv_store: String,
+        },
+    }
+
+    // JSON is missing the `dimensions` field entirely — should deserialize as None
+    let res: Result<Config, _> = serde_json::from_value(json!({
+        "settings": "default",
+        "dist_metric": "euclidean"
+    }));
+
+    assert!(res.is_ok(), "expected Ok but got: {res:?}");
+    match res.unwrap() {
+        Config::V0 { dimensions, .. } => assert_eq!(dimensions, None),
+        other => panic!("expected V0, got {other:?}"),
+    }
+}

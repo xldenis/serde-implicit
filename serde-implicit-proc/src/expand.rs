@@ -393,7 +393,7 @@ fn implement_variant_deserializer(
             let #field_var = match #field_var {
                 ::std::option::Option::Some(#field_var) => #field_var,
                 ::std::option::Option::None => {
-                    return ::std::result::Result::Err(<__A::Error as serde::de::Error>::missing_field(#field_name));
+                    serde_implicit::__private::missing_field(#field_name)?
                 }
             };
         });
