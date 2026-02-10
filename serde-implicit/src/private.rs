@@ -87,7 +87,7 @@ where
     where
         M: MapAccess<'de>,
     {
-        let mut tag: Option<(T, &str)> = None;
+        let mut tag: Option<(T, String)> = None;
         let mut vec = Vec::<(Content, Content)>::with_capacity(0); // todo
         while let Some(k) = map.next_key()? {
             match k {
@@ -111,7 +111,7 @@ where
                                     "found multiple implicit tag fields: `{prev_key}` and `{key_name}`",
                                 )));
                             } else {
-                                tag = Some((t, key_name.to_owned().leak()));
+                                tag = Some((t, key_name.to_owned()));
                                 vec.push((k, v));
                             }
                         }
