@@ -318,7 +318,7 @@ dependencies = [
 
 [[package]]
 name = "serde-implicit"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "arbitrary-json",
  "proptest",
@@ -332,7 +332,7 @@ dependencies = [
 
 [[package]]
 name = "serde-implicit-proc"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "quote",
