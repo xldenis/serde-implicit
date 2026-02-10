@@ -28,6 +28,8 @@ Even when your enum types have completely disjoint fields, serde will blindly at
 
 `serde-implicit` solves this problem by introducing an *implicitly* tagged enum representation. Each variant can be have a field annotated with `#[serde_implicit(tag)]`, and when that field is seen in input we can "commit" to parsing that variant, producing better error messages as a side-effect.
 
+**Important:** Tag fields should be non-optional (not `Option<T>`). During deserialization, `null` values are ignored when searching for the implicit tag — a field with a `null` value will not be used to select a variant. This means if your tag field is `Option<T>` and the input contains `"tag_field": null`, that variant will not be matched.
+
 ```
 { "content": "oops i mislabeled my field", "username": "xldenis", "timestamp": 1234 }
 

@@ -87,7 +87,7 @@ where
     where
         M: MapAccess<'de>,
     {
-        let mut tag = None;
+        let mut tag: Option<(T, &str)> = None;
         let mut vec = Vec::<(Content, Content)>::with_capacity(0); // todo
         while let Some(k) = map.next_key()? {
             match k {
@@ -95,19 +95,25 @@ where
                     match T::deserialize::<ContentDeserializer<'_, M::Error>>(
                         k.clone().into_deserializer(),
                     ) {
-                        // failed to parse a key must be a vlaue
+                        // failed to parse a key, must be a non-tag field
                         Err(_) => {
                             let v = map.next_value()?;
                             vec.push((k, v));
                         }
                         Ok(t) => {
-                            if tag.is_some() {
-                                // todo: error message
-                                return Err(de::Error::duplicate_field("blah".into()));
+                            let v: Content = map.next_value()?;
+                            let key_name = k.as_str().unwrap_or("unknown");
+                            // Skip null values — they can't be a real tag
+                            if matches!(v, Content::None | Content::Unit) {
+                                vec.push((k, v));
+                            } else if let Some((_, prev_key)) = &tag {
+                                return Err(de::Error::custom(format_args!(
+                                    "found multiple implicit tag fields: `{prev_key}` and `{key_name}`",
+                                )));
+                            } else {
+                                tag = Some((t, key_name.to_owned().leak()));
+                                vec.push((k, v));
                             }
-                            let v = map.next_value()?;
-                            tag = Some(t);
-                            vec.push((k, v));
                         }
                     }
                 }
@@ -120,7 +126,7 @@ where
         match (tag, self.fallthrough) {
             (None, None) => Err(de::Error::missing_field("tag was not found".into())),
             (None, Some(default)) => Ok((default, Content::Map(vec))),
-            (Some(tag), _) => Ok((tag, Content::Map(vec))),
+            (Some((tag, _)), _) => Ok((tag, Content::Map(vec))),
         }
     }
 }

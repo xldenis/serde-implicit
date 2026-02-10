@@ -1395,11 +1395,7 @@ where
     map_key_integer_method!(owned deserialize_u32, visit_u32, u32);
     map_key_integer_method!(owned deserialize_u64, visit_u64, u64);
 
-    fn deserialize_newtype_struct<V>(
-        self,
-        _name: &str,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
+    fn deserialize_newtype_struct<V>(self, _name: &str, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -1615,9 +1611,7 @@ where
     V: Visitor<'de>,
     E: de::Error,
 {
-    let map = content
-        .iter()
-        .map(|(k, v)| (MapKeyContentRef(k), &*v));
+    let map = content.iter().map(|(k, v)| (MapKeyContentRef(k), &*v));
     let mut map_visitor = MapDeserializer::new(map);
     let value = tri!(visitor.visit_map(&mut map_visitor));
     tri!(map_visitor.end());
@@ -2051,11 +2045,7 @@ where
     map_key_integer_method!(ref deserialize_u32, visit_u32, u32);
     map_key_integer_method!(ref deserialize_u64, visit_u64, u64);
 
-    fn deserialize_newtype_struct<V>(
-        self,
-        _name: &str,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
+    fn deserialize_newtype_struct<V>(self, _name: &str, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {

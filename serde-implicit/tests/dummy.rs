@@ -395,9 +395,8 @@ fn test_string_key_map_to_integer_key() {
         },
     }
 
-    let res: Result<WithMap, _> = serde_json::from_value(
-        json!({"tag": "hello", "data": {"0": "zero", "1": "one"}}),
-    );
+    let res: Result<WithMap, _> =
+        serde_json::from_value(json!({"tag": "hello", "data": {"0": "zero", "1": "one"}}));
     let val = res.unwrap();
     match val {
         WithMap::Variant { data, .. } => {
@@ -424,9 +423,8 @@ fn test_newtype_struct_map_key() {
         },
     }
 
-    let res: Result<WithNewtypeKey, _> = serde_json::from_value(
-        json!({"tag": "hello", "data": {"0": "zero", "42": "forty-two"}}),
-    );
+    let res: Result<WithNewtypeKey, _> =
+        serde_json::from_value(json!({"tag": "hello", "data": {"0": "zero", "42": "forty-two"}}));
     let val = res.unwrap();
     match val {
         WithNewtypeKey::Variant { data, .. } => {
@@ -435,6 +433,79 @@ fn test_newtype_struct_map_key() {
             assert_eq!(data[&Id(42)], "forty-two");
         }
     }
+}
+
+/// Null tag values should be ignored: if a tag key is present but its value is
+/// `null`, the visitor should skip it and keep looking for a non-null tag.
+/// This covers evolving schemas where an older variant's data may contain a
+/// newer variant's tag key set to `null`.
+#[test]
+fn test_null_tag_value_skipped() {
+    #[allow(dead_code)]
+    #[derive(serde_implicit_proc::Deserialize, Debug)]
+    enum Schema {
+        Old {
+            #[serde_implicit(tag)]
+            config: String,
+            value: u32,
+        },
+        New {
+            #[serde_implicit(tag)]
+            entries: Vec<String>,
+            value: u32,
+        },
+    }
+
+    // "entries" is present but null — should be skipped, "config" wins.
+    let res: Result<Schema, _> = serde_json::from_value(json!({
+        "entries": null,
+        "config": "default",
+        "value": 42,
+    }));
+    assert!(res.is_ok(), "expected Ok but got: {res:?}");
+    match res.unwrap() {
+        Schema::Old { config, value, .. } => {
+            assert_eq!(config, "default");
+            assert_eq!(value, 42);
+        }
+        other => panic!("expected Old, got {other:?}"),
+    }
+
+    // Symmetric: "config" is null, "entries" should win.
+    let res: Result<Schema, _> = serde_json::from_value(json!({
+        "config": null,
+        "entries": ["a"],
+        "value": 7,
+    }));
+    assert!(res.is_ok(), "expected Ok but got: {res:?}");
+    match res.unwrap() {
+        Schema::New { entries, value, .. } => {
+            assert_eq!(entries, vec!["a"]);
+            assert_eq!(value, 7);
+        }
+        other => panic!("expected New, got {other:?}"),
+    }
+
+    // Both tags are null — should fail with "tag was not found".
+    let res: Result<Schema, _> = serde_json::from_value(json!({
+        "config": null,
+        "entries": null,
+        "value": 0,
+    }));
+    assert!(res.is_err());
+
+    // Both tags are non-null — should fail with duplicate tag error.
+    let res: Result<Schema, _> = serde_json::from_value(json!({
+        "config": "default",
+        "entries": ["a"],
+        "value": 0,
+    }));
+    let err = res.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("found multiple implicit tag fields"),
+        "expected 'found multiple implicit tag fields', got: {err}",
+    );
 }
 
 // musings on test coverage
